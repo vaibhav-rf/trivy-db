@@ -6,13 +6,13 @@
         Name: RapidFort Security Advisories
         URL: https://github.com/rapidfort/security-advisories
         BaseID: ubuntu
-    - key: rapidfort debian 12
+    - key: rapidfort alpine 3.18
       value:
         ID: rapidfort
         Name: RapidFort Security Advisories
         URL: https://github.com/rapidfort/security-advisories
-        BaseID: debian
-    - key: rapidfort redhat 9
+        BaseID: alpine
+    - key: rapidfort Red Hat 9
       value:
         ID: rapidfort
         Name: RapidFort Security Advisories

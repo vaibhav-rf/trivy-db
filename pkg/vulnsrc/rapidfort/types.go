@@ -1,12 +1,18 @@
 package rapidfort
 
-// PackageAdvisory matches the per-version per-package JSON format written by
-// vuln-list-update's rapidfort package.
-// File path: vuln-list/rapidfort/{os}/{version}/{package_name}.json
-type PackageAdvisory struct {
-	PackageName   string              `json:"package_name"`
-	DistroVersion string              `json:"distro_version"`
-	Advisories    map[string]CVEEntry `json:"advisories"` // cveID -> CVEEntry
+// SourcePackageAdvisory matches the per-package JSON format published in the
+// upstream RapidFort security-advisories repo.
+// File path: security-advisories/OS/{osName}/{package_name}.json
+//
+// Splitting per distro version happens in-memory inside parse() at DB-build
+// time (the file bundles all versions of a package in a single JSON blob), so
+// this format is what the parser consumes directly. Formerly there was a
+// vuln-list-update fetcher that pre-split these into per-version files; that
+// intermediate step was removed because the upstream is already parseable JSON
+// in a git repo (same pattern as ghsa, bundler, node, bitnami, etc.).
+type SourcePackageAdvisory struct {
+	PackageName string                         `json:"package_name"`
+	Advisory    map[string]map[string]CVEEntry `json:"advisory"` // distroVersion -> cveID -> CVEEntry
 }
 
 // CVEEntry holds the advisory details for a single CVE within a distro release.

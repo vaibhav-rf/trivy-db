@@ -1,0 +1,20 @@
+{
+  "package_name": "libssl3",
+  "advisory": {
+    "3.18": {
+      "CVE-2023-5678": {
+        "cve_id": "CVE-2023-5678",
+        "title": "openssl: X.400 address type confusion in X.509 GeneralName",
+        "description": "There is a type confusion vulnerability relating to X.400 address processing inside an X.509 GeneralName.",
+        "severity": "MEDIUM",
+        "status": "fixed",
+        "events": [
+          {
+            "introduced": "3.0.0",
+            "fixed": "3.1.4-r1"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -22,8 +22,9 @@ import (
 // rapidfortDir is the subdirectory under the DB-build cache where the RapidFort
 // security-advisories git repo is extracted. It must match the directory name
 // used by trivy-db's Makefile db-fetch-langs target (see the download_and_extract
-// line for github.com/rapidfort/security-advisories).
-const rapidfortDir = "security-advisories"
+// line for github.com/rapidfort/security-advisories). The "rapidfort-" prefix
+// disambiguates it from other "*-security-advisories" caches (e.g. php-).
+const rapidfortDir = "rapidfort-security-advisories"
 
 // osSubDir is the top-level directory inside the RapidFort security-advisories
 // repo that groups advisory JSON files by operating system.
@@ -156,6 +157,13 @@ func (vs VulnSrc) put(entries []entry) error {
 		// dedup here avoids a pre-pass over entries just to build a platform set.
 		addedDataSources := map[string]struct{}{}
 		for _, e := range entries {
+			// After the bucket refactor, entry no longer carries a pre-computed
+			// platform string — it holds a DataSourceBucket that composes the
+			// name from the base OS + version at call time (e.g. "rapidfort
+			// Red Hat 9"). Name() does a string concat internally, so cache
+			// it once here and reuse it four times below: the oops error
+			// context, the addedDataSources dedup key, PutAdvisoryDetail's
+			// nestedBktNames arg, and (indirectly, as the platform) PutDataSource.
 			platform := e.bucket.Name()
 			eb := oops.With("platform", platform).With("package", e.pkgName).With("cve", e.cveID)
 

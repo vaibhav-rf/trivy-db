@@ -76,7 +76,7 @@ trivy-db:
 
 .PHONY: db-fetch-langs
 db-fetch-langs:
-	mkdir -p $(CACHE_DIR)/{ruby-advisory-db,php-security-advisories,nodejs-security-wg,ghsa,cocoapods-specs,bitnami-vulndb,govulndb,k8s-cve-feed,julia,security-advisories}
+	mkdir -p $(CACHE_DIR)/{ruby-advisory-db,php-security-advisories,nodejs-security-wg,ghsa,cocoapods-specs,bitnami-vulndb,govulndb,k8s-cve-feed,julia,rapidfort-security-advisories}
 	$(call download_and_extract,https://github.com/rubysec/ruby-advisory-db/archive/master.tar.gz,$(CACHE_DIR)/ruby-advisory-db)
 	$(call download_and_extract,https://github.com/FriendsOfPHP/security-advisories/archive/master.tar.gz,$(CACHE_DIR)/php-security-advisories)
 	$(call download_and_extract,https://github.com/nodejs/security-wg/archive/main.tar.gz,$(CACHE_DIR)/nodejs-security-wg)
@@ -90,7 +90,7 @@ db-fetch-langs:
 	## RapidFort advisories are already published as parseable JSON in a git repo,
 	## so we fetch them directly here (same pattern as ghsa, ruby-advisory-db, bitnami-vulndb, etc.)
 	## rather than going through vuln-list-update.
-	$(call download_and_extract,https://github.com/rapidfort/security-advisories/archive/refs/heads/main.tar.gz,$(CACHE_DIR)/security-advisories)
+	$(call download_and_extract,https://github.com/rapidfort/security-advisories/archive/refs/heads/main.tar.gz,$(CACHE_DIR)/rapidfort-security-advisories)
 
 .PHONY: db-build
 db-build: trivy-db

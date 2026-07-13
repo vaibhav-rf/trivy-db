@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/samber/lo"
 	"github.com/samber/oops"
 	bolt "go.etcd.io/bbolt"
 
@@ -18,7 +19,16 @@ import (
 	"github.com/aquasecurity/trivy-db/pkg/vulnsrc/vulnerability"
 )
 
-const rapidfortDir = "rapidfort"
+// rapidfortDir is the subdirectory under the DB-build cache where the RapidFort
+// security-advisories git repo is extracted. It must match the directory name
+// used by trivy-db's Makefile db-fetch-langs target (see the download_and_extract
+// line for github.com/rapidfort/security-advisories). The "rapidfort-" prefix
+// disambiguates it from other "*-security-advisories" caches (e.g. php-).
+const rapidfortDir = "rapidfort-security-advisories"
+
+// osSubDir is the top-level directory inside the RapidFort security-advisories
+// repo that groups advisory JSON files by operating system.
+const osSubDir = "OS"
 
 var source = types.DataSource{
 	ID:   vulnerability.RapidFort,
@@ -49,10 +59,13 @@ func (vs VulnSrc) Name() types.SourceID {
 	return source.ID
 }
 
-// Update reads all per-package JSON files from vuln-list/rapidfort/{os}/{version}/{pkg}.json
-// and writes them into the BoltDB.
+// Update reads all per-package JSON files from
+// {dir}/security-advisories/OS/{os}/{pkg}.json (the raw upstream RapidFort
+// advisory repo, fetched into the build cache by the Makefile) and writes
+// them into the BoltDB. Splitting each source file by distro version happens
+// in-memory inside parse(), not on disk.
 func (vs VulnSrc) Update(dir string) error {
-	rootDir := filepath.Join(dir, "vuln-list", rapidfortDir)
+	rootDir := filepath.Join(dir, rapidfortDir, osSubDir)
 	eb := oops.In("rapidfort").With("root_dir", rootDir)
 
 	entries, err := vs.parse(rootDir)
@@ -66,8 +79,7 @@ func (vs VulnSrc) Update(dir string) error {
 }
 
 type entry struct {
-	platform string
-	baseOS   string
+	bucket   bucket.DataSourceBucket
 	pkgName  string
 	cveID    string
 	advisory types.Advisory
@@ -83,36 +95,47 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 			return nil
 		}
 
-		// Relative path: {osName}/{version}/{pkg}.json
+		// Relative path: {osName}/{pkg}.json (rooted at security-advisories/OS/).
+		// The distro version is NOT in the path — it's carried inside the JSON
+		// (one source file bundles all versions for a given package), so we
+		// split by version in-memory below.
 		relPath, err := filepath.Rel(rootDir, path)
 		if err != nil {
 			return eb.With("path", path).Wrapf(err, "failed to make relative path")
 		}
-		parts := strings.SplitN(filepath.ToSlash(relPath), "/", 3)
-		if len(parts) < 3 {
+		parts := strings.SplitN(filepath.ToSlash(relPath), "/", 2)
+		if len(parts) < 2 {
 			vs.logger.Warn("Skipping file with unexpected path structure", "path", path)
 			return nil
 		}
-		// Extract OS and version from the directory structure: {osName}/{version}/{pkg}.json
-		// This is authoritative and avoids dependence on the JSON field name (distro_version vs distro_codename).
 		osName := parts[0]
-		version := parts[1]
 
-		var pkg PackageAdvisory
-		if err := json.NewDecoder(r).Decode(&pkg); err != nil {
+		var src SourcePackageAdvisory
+		if err := json.NewDecoder(r).Decode(&src); err != nil {
 			return eb.With("path", path).Wrapf(err, "json decode error")
 		}
 
-		b := bucket.NewRapidFort(osName, version)
-		for cveID, cveEntry := range pkg.Advisories {
-			entries = append(entries, entry{
-				platform: b.Name(),
-				baseOS:   b.BaseOS(),
-				pkgName:  pkg.PackageName,
-				cveID:    cveID,
-				advisory: buildAdvisory(cveEntry),
-				detail:   buildVulnerabilityDetail(cveEntry),
-			})
+		// The source file's shape is {version: {cveID: CVEEntry}}. We fan it
+		// out here into per-(platform, cveID) entries so downstream put() can
+		// write one advisory-detail per (version, package, cveID) tuple —
+		// the same shape the previous vuln-list-update-based parser produced.
+		for version, cveMap := range src.Advisory {
+			// newBucket doubles as the supported-OS gate: unsupported base
+			// OSes (e.g. debian) fall through to its default case and skip.
+			b, err := newBucket(osName, version)
+			if err != nil {
+				vs.logger.Warn("Skipping advisory for unsupported base OS", "path", path, "base_os", osName)
+				return nil
+			}
+			for cveID, cveEntry := range cveMap {
+				entries = append(entries, entry{
+					bucket:   b,
+					pkgName:  src.PackageName,
+					cveID:    cveID,
+					advisory: buildAdvisory(cveEntry),
+					detail:   buildVulnerabilityDetail(cveEntry),
+				})
+			}
 		}
 		return nil
 	})
@@ -129,29 +152,29 @@ func (vs VulnSrc) put(entries []entry) error {
 	}
 	vs.logger.Info("Saving RapidFort advisories", "count", len(entries))
 
-	// Track unique platform → baseOS mappings for DataSource registration.
-	platforms := map[string]string{}
-	for _, e := range entries {
-		platforms[e.platform] = e.baseOS
-	}
-
 	return vs.dbc.BatchUpdate(func(tx *bolt.Tx) error {
-		for platform, baseOS := range platforms {
-			ds := types.DataSource{
-				ID:     source.ID,
-				Name:   source.Name,
-				URL:    source.URL,
-				BaseID: types.SourceID(baseOS),
-			}
-			if err := vs.dbc.PutDataSource(tx, platform, ds); err != nil {
-				return oops.With("platform", platform).Wrapf(err, "failed to put data source")
-			}
-		}
-
+		// Register the data source once per unique platform. Inlining the
+		// dedup here avoids a pre-pass over entries just to build a platform set.
+		addedDataSources := map[string]struct{}{}
 		for _, e := range entries {
-			eb := oops.With("platform", e.platform).With("package", e.pkgName).With("cve", e.cveID)
+			// After the bucket refactor, entry no longer carries a pre-computed
+			// platform string — it holds a DataSourceBucket that composes the
+			// name from the base OS + version at call time (e.g. "rapidfort
+			// Red Hat 9"). Name() does a string concat internally, so cache
+			// it once here and reuse it four times below: the oops error
+			// context, the addedDataSources dedup key, PutAdvisoryDetail's
+			// nestedBktNames arg, and (indirectly, as the platform) PutDataSource.
+			platform := e.bucket.Name()
+			eb := oops.With("platform", platform).With("package", e.pkgName).With("cve", e.cveID)
 
-			if err := vs.dbc.PutAdvisoryDetail(tx, e.cveID, e.pkgName, []string{e.platform}, e.advisory); err != nil {
+			if _, ok := addedDataSources[platform]; !ok {
+				if err := vs.dbc.PutDataSource(tx, platform, e.bucket.DataSource()); err != nil {
+					return eb.Wrapf(err, "failed to put data source")
+				}
+				addedDataSources[platform] = struct{}{}
+			}
+
+			if err := vs.dbc.PutAdvisoryDetail(tx, e.cveID, e.pkgName, []string{platform}, e.advisory); err != nil {
 				return eb.Wrapf(err, "failed to save advisory")
 			}
 			if err := vs.dbc.PutVulnerabilityDetail(tx, e.cveID, source.ID, e.detail); err != nil {
@@ -169,7 +192,6 @@ func (vs VulnSrc) put(entries []entry) error {
 // Each event represents a version range: Introduced..Fixed (or open-ended if Fixed is empty).
 func buildAdvisory(cve CVEEntry) types.Advisory {
 	var patched, vulnerable, identifiers []string
-	var hasIdentifier bool
 	for _, ev := range cve.Events {
 		switch {
 		case ev.Fixed != "":
@@ -190,9 +212,6 @@ func buildAdvisory(cve CVEEntry) types.Advisory {
 		}
 		// Track identifiers parallel to vulnerable versions.
 		identifiers = append(identifiers, ev.Identifier)
-		if ev.Identifier != "" {
-			hasIdentifier = true
-		}
 	}
 
 	severity := types.SeverityUnknown
@@ -208,7 +227,8 @@ func buildAdvisory(cve CVEEntry) types.Advisory {
 
 	// Only set Custom when at least one event carries an identifier (e.g. redhat).
 	// Ubuntu/alpine events have no identifiers, so Custom stays nil for them.
-	if hasIdentifier {
+	// EveryBy returns true (vacuously) on an empty slice, so no-events → no Custom.
+	if !lo.EveryBy(identifiers, func(s string) bool { return s == "" }) {
 		adv.Custom = RapidFortCustom{
 			Identifiers: identifiers,
 		}
@@ -219,15 +239,16 @@ func buildAdvisory(cve CVEEntry) types.Advisory {
 
 // buildVulnerabilityDetail constructs a VulnerabilityDetail from a CVEEntry for
 // enriching the vulnerability bucket with title, description and severity.
+// buildVulnerabilityDetail carries only prose metadata (title, description).
+// Severity is intentionally NOT set here — RapidFort is a curated derivative
+// (like root.io), so per-package severity lives in Advisory and is read
+// directly by the scanner. Writing it here as well would risk FillInfo
+// overriding RapidFort's curated severity with the base-OS severity via
+// VendorSeverity[BaseID] when the same CVE also exists in the base feed.
 func buildVulnerabilityDetail(cve CVEEntry) types.VulnerabilityDetail {
-	severity := types.SeverityUnknown
-	if sev, err := types.NewSeverity(strings.ToUpper(cve.Severity)); err == nil {
-		severity = sev
-	}
 	return types.VulnerabilityDetail{
 		Title:       cve.Title,
 		Description: cve.Description,
-		Severity:    severity,
 	}
 }
 
@@ -252,8 +273,11 @@ func NewVulnSrcGetter(baseOS string) VulnSrcGetter {
 func (vs VulnSrcGetter) Get(params db.GetParams) ([]types.Advisory, error) {
 	eb := oops.In("rapidfort").With("base_os", vs.baseOS).With("os_version", params.Release).With("package_name", params.PkgName)
 
-	platformName := bucket.NewRapidFort(vs.baseOS, params.Release).Name()
-	advs, err := vs.dbc.GetAdvisories(platformName, params.PkgName)
+	b, err := newBucket(vs.baseOS, params.Release)
+	if err != nil {
+		return nil, eb.Wrapf(err, "failed to create a bucket name")
+	}
+	advs, err := vs.dbc.GetAdvisories(b.Name(), params.PkgName)
 	if err != nil {
 		return nil, eb.Wrapf(err, "failed to get advisories")
 	}

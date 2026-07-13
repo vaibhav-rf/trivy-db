@@ -1,12 +1,11 @@
 package rapidfort
 
-// PackageAdvisory matches the per-version per-package JSON format written by
-// vuln-list-update's rapidfort package.
-// File path: vuln-list/rapidfort/{os}/{version}/{package_name}.json
-type PackageAdvisory struct {
-	PackageName   string              `json:"package_name"`
-	DistroVersion string              `json:"distro_version"`
-	Advisories    map[string]CVEEntry `json:"advisories"` // cveID -> CVEEntry
+// SourcePackageAdvisory is one per-package file from the RapidFort repo
+// (OS/{osName}/{package_name}.json). One file bundles every distro version
+// for a package; parse() fans it out per-version in-memory at DB-build time.
+type SourcePackageAdvisory struct {
+	PackageName string                         `json:"package_name"`
+	Advisory    map[string]map[string]CVEEntry `json:"advisory"` // distroVersion -> cveID -> CVEEntry
 }
 
 // CVEEntry holds the advisory details for a single CVE within a distro release.
@@ -19,18 +18,17 @@ type CVEEntry struct {
 	Events      []Event `json:"events"`
 }
 
-// Event represents a single version range — an introduced version and an optional fixed version.
-// If Fixed is empty the vulnerability is still open for that introduced range.
+// Event is a version range: [Introduced, Fixed). An empty Fixed means the
+// vulnerability is still open from Introduced onward.
 type Event struct {
 	Introduced string `json:"introduced,omitempty"`
 	Fixed      string `json:"fixed,omitempty"`
 	Identifier string `json:"identifier,omitempty"` // e.g. "el9", "fc39"; absent for ubuntu/alpine
 }
 
-// RapidFortCustom carries per-event metadata via types.Advisory.Custom.
-// Identifiers is parallel to Advisory.VulnerableVersions — Identifiers[i]
-// is the distro identifier (e.g. "el9") for VulnerableVersions[i].
-// Only set when at least one event has a non-empty Identifier.
+// RapidFortCustom rides on types.Advisory.Custom to carry per-event metadata.
+// Identifiers is index-parallel to types.Advisory.VulnerableVersions: for
+// range i, Identifiers[i] is the distro tag (e.g. "el9") for VulnerableVersions[i].
 type RapidFortCustom struct {
 	Identifiers []string `json:"identifiers,omitempty"`
 }

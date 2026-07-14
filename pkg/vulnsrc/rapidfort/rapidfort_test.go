@@ -342,6 +342,14 @@ func TestVulnSrc_Update(t *testing.T) {
 			dir:     filepath.Join("testdata", "sad"),
 			wantErr: "json decode error",
 		},
+		{
+			// A CVE where one event carries an identifier and another doesn't
+			// would silently misalign the identifier list with vulnerable
+			// versions on the scanner side, so parse must reject the file.
+			name:    "mixed empty and non-empty identifiers fail the build",
+			dir:     filepath.Join("testdata", "mixed_identifiers"),
+			wantErr: "mixed empty and non-empty identifiers",
+		},
 	}
 
 	for _, tt := range tests {

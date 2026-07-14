@@ -24,6 +24,15 @@ func TestVulnSrc_Update(t *testing.T) {
 		{
 			name: "happy path",
 			dir:  filepath.Join("testdata", "happy"),
+			// The happy redhat fixture includes a bogus "el4" version key
+			// alongside the real "9" one — the invalid version must not
+			// produce any bucket (see version-key filter in parse()).
+			noBuckets: [][]string{
+				{"data-source", "rapidfort Red Hat el4"},
+				{"advisory-detail", "CVE-2018-5996"},
+				{"vulnerability-detail", "CVE-2018-5996"},
+				{"vulnerability-id", "CVE-2018-5996"},
+			},
 			wantValues: []vulnsrctest.WantValues{
 				{
 					Key: []string{
@@ -320,31 +329,22 @@ func TestVulnSrc_Update(t *testing.T) {
 		},
 		{
 			// Malformed path: a JSON file at security-advisories/OS/curl.json
-			// (missing the {osName}/ level) must be skipped with a warning by
-			// the len(parts) < 2 guard in parse(). No buckets should be written.
-			name: "malformed path - json directly under OS/ is skipped",
-			dir:  filepath.Join("testdata", "malformed_path"),
-			noBuckets: [][]string{
-				{"advisory-detail"},
-				{"vulnerability-id"},
-				{"vulnerability-detail"},
-				{"data-source"},
-			},
+			// (missing the {osName}/ level) is skipped by the len(parts) < 2
+			// guard in parse(). If every file in the tree is malformed, parse
+			// returns zero entries and put surfaces the empty result as an error.
+			name:    "malformed path - json directly under OS/ triggers empty-parse error",
+			dir:     filepath.Join("testdata", "malformed_path"),
+			wantErr: "no RapidFort advisories to save",
 		},
 		{
-			// Unsupported OS: RapidFort's upstream repo also publishes an
-			// OS/debian/ directory, but trivy's scanner side doesn't dispatch
-			// to it (see provider.go). The supportedOSes allowlist must skip
-			// these advisories at DB build so we don't populate unreachable
-			// buckets. Fixture is a real-shape debian advisory JSON.
-			name: "unsupported OS is skipped by allowlist",
-			dir:  filepath.Join("testdata", "unsupported_os"),
-			noBuckets: [][]string{
-				{"advisory-detail"},
-				{"vulnerability-id"},
-				{"vulnerability-detail"},
-				{"data-source"},
-			},
+			// When every file is for an unsupported OS (e.g. only OS/debian/
+			// present), newBucket rejects each and parse returns zero entries.
+			// put treats that as an error rather than a silent no-op, so a
+			// misconfigured cache (or an unexpectedly all-unsupported feed)
+			// surfaces at build time instead of shipping an empty integration.
+			name:    "empty parse (all unsupported OSes) returns error",
+			dir:     filepath.Join("testdata", "unsupported_os"),
+			wantErr: "no RapidFort advisories to save",
 		},
 		{
 			name:    "sad path - invalid JSON",

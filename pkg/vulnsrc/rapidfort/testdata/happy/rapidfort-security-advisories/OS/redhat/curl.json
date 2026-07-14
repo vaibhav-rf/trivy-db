@@ -1,6 +1,21 @@
 {
   "package_name": "curl",
   "advisory": {
+    "el4": {
+      "CVE-2018-5996": {
+        "cve_id": "CVE-2018-5996",
+        "title": "curl: bogus version key that must be skipped",
+        "description": "This entry uses an identifier-like key ('el4') instead of a real distro version and must not produce a bucket.",
+        "severity": "HIGH",
+        "status": "open",
+        "events": [
+          {
+            "introduced": "1.0.0",
+            "identifier": "el4"
+          }
+        ]
+      }
+    },
     "9": {
       "CVE-2023-27536": {
         "cve_id": "CVE-2023-27536",

@@ -19,11 +19,6 @@ import (
 	"github.com/aquasecurity/trivy-db/pkg/vulnsrc/vulnerability"
 )
 
-// rapidfortDir is the subdirectory under the DB-build cache where the RapidFort
-// security-advisories git repo is extracted. It must match the directory name
-// used by trivy-db's Makefile db-fetch-langs target (see the download_and_extract
-// line for github.com/rapidfort/security-advisories). The "rapidfort-" prefix
-// disambiguates it from other "*-security-advisories" caches (e.g. php-).
 const rapidfortDir = "rapidfort-security-advisories"
 
 // osSubDir is the top-level directory inside the RapidFort security-advisories
@@ -117,9 +112,16 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 
 		// The source file's shape is {version: {cveID: CVEEntry}}. We fan it
 		// out here into per-(platform, cveID) entries so downstream put() can
-		// write one advisory-detail per (version, package, cveID) tuple —
-		// the same shape the previous vuln-list-update-based parser produced.
+		// write one advisory-detail per (version, package, cveID) tuple.
 		for version, cveMap := range src.Advisory {
+			// Real distro versions start with a digit ("9", "20.04", "3.18").
+			// Skip identifier-like keys (e.g. "el4") that occasionally leak
+			// into the upstream feed — otherwise they'd become bogus buckets
+			// like "rapidfort Red Hat el4" that no scanner would ever match.
+			if version == "" || version[0] < '0' || version[0] > '9' {
+				vs.logger.Warn("Skipping advisory with invalid version key", "path", path, "version", version)
+				continue
+			}
 			// newBucket doubles as the supported-OS gate: unsupported base
 			// OSes (e.g. debian) fall through to its default case and skip.
 			b, err := newBucket(osName, version)
@@ -146,24 +148,20 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 }
 
 func (vs VulnSrc) put(entries []entry) error {
+	// Fail loudly on an empty parse — a silent no-op here would ship an empty
+	// RapidFort integration if the cache is misconfigured or the feed breaks,
+	// and nobody scans per-source build logs to catch it.
 	if len(entries) == 0 {
-		vs.logger.Info("No RapidFort advisories found")
-		return nil
+		return oops.Errorf("no RapidFort advisories to save — check that the security-advisories cache is populated")
 	}
 	vs.logger.Info("Saving RapidFort advisories", "count", len(entries))
 
 	return vs.dbc.BatchUpdate(func(tx *bolt.Tx) error {
-		// Register the data source once per unique platform. Inlining the
-		// dedup here avoids a pre-pass over entries just to build a platform set.
+		// Register the data source once per platform.
 		addedDataSources := map[string]struct{}{}
 		for _, e := range entries {
-			// After the bucket refactor, entry no longer carries a pre-computed
-			// platform string — it holds a DataSourceBucket that composes the
-			// name from the base OS + version at call time (e.g. "rapidfort
-			// Red Hat 9"). Name() does a string concat internally, so cache
-			// it once here and reuse it four times below: the oops error
-			// context, the addedDataSources dedup key, PutAdvisoryDetail's
-			// nestedBktNames arg, and (indirectly, as the platform) PutDataSource.
+			// Cache the platform name: e.bucket.Name() composes it from base OS +
+			// version at call time (string concat), and we reuse it four times below.
 			platform := e.bucket.Name()
 			eb := oops.With("platform", platform).With("package", e.pkgName).With("cve", e.cveID)
 
@@ -210,7 +208,11 @@ func buildAdvisory(cve CVEEntry) types.Advisory {
 		default:
 			continue
 		}
-		// Track identifiers parallel to vulnerable versions.
+		// Append even when ev.Identifier is empty so identifiers[i] stays
+		// index-parallel with vulnerable[i] — the scanner pairs them by
+		// index (see parseCustomIdentifiers in trivy/pkg/detector/ospkg/rapidfort).
+		// The EveryBy check below drops Custom entirely when every identifier
+		// is empty (ubuntu/alpine), so those empties never reach the DB.
 		identifiers = append(identifiers, ev.Identifier)
 	}
 
@@ -237,14 +239,11 @@ func buildAdvisory(cve CVEEntry) types.Advisory {
 	return adv
 }
 
-// buildVulnerabilityDetail constructs a VulnerabilityDetail from a CVEEntry for
-// enriching the vulnerability bucket with title, description and severity.
-// buildVulnerabilityDetail carries only prose metadata (title, description).
-// Severity is intentionally NOT set here — RapidFort is a curated derivative
-// (like root.io), so per-package severity lives in Advisory and is read
-// directly by the scanner. Writing it here as well would risk FillInfo
-// overriding RapidFort's curated severity with the base-OS severity via
-// VendorSeverity[BaseID] when the same CVE also exists in the base feed.
+// buildVulnerabilityDetail carries only title and description. Severity is
+// deliberately omitted: RapidFort is a curated derivative (like root.io), so
+// per-package severity lives in Advisory. Setting it here too would let
+// FillInfo override the curated value with the base-OS severity via
+// VendorSeverity[BaseID] when the same CVE exists in the base feed.
 func buildVulnerabilityDetail(cve CVEEntry) types.VulnerabilityDetail {
 	return types.VulnerabilityDetail{
 		Title:       cve.Title,
@@ -253,7 +252,7 @@ func buildVulnerabilityDetail(cve CVEEntry) types.VulnerabilityDetail {
 }
 
 // VulnSrcGetter is used by trivy (the scanner) to query advisories from the DB
-// for a specific base OS (e.g. "ubuntu" or "debian").
+// for a specific base OS (e.g. "ubuntu" or "alpine").
 type VulnSrcGetter struct {
 	baseOS string
 	config

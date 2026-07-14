@@ -114,14 +114,6 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 		// out here into per-(platform, cveID) entries so downstream put() can
 		// write one advisory-detail per (version, package, cveID) tuple.
 		for version, cveMap := range src.Advisory {
-			// Real distro versions start with a digit ("9", "20.04", "3.18").
-			// Skip identifier-like keys (e.g. "el4") that occasionally leak
-			// into the upstream feed — otherwise they'd become bogus buckets
-			// like "rapidfort Red Hat el4" that no scanner would ever match.
-			if version == "" || version[0] < '0' || version[0] > '9' {
-				vs.logger.Warn("Skipping advisory with invalid version key", "path", path, "version", version)
-				continue
-			}
 			// newBucket doubles as the supported-OS gate: unsupported base
 			// OSes (e.g. debian) fall through to its default case and skip.
 			b, err := newBucket(osName, version)

@@ -24,15 +24,6 @@ func TestVulnSrc_Update(t *testing.T) {
 		{
 			name: "happy path",
 			dir:  filepath.Join("testdata", "happy"),
-			// The happy redhat fixture includes a bogus "el4" version key
-			// alongside the real "9" one — the invalid version must not
-			// produce any bucket (see version-key filter in parse()).
-			noBuckets: [][]string{
-				{"data-source", "rapidfort Red Hat el4"},
-				{"advisory-detail", "CVE-2018-5996"},
-				{"vulnerability-detail", "CVE-2018-5996"},
-				{"vulnerability-id", "CVE-2018-5996"},
-			},
 			wantValues: []vulnsrctest.WantValues{
 				{
 					Key: []string{

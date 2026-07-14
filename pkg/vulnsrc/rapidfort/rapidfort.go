@@ -122,11 +122,15 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 				return nil
 			}
 			for cveID, cveEntry := range cveMap {
+				advisory, err := buildAdvisory(cveEntry)
+				if err != nil {
+					return eb.With("path", path).With("cve", cveID).Wrapf(err, "failed to build advisory")
+				}
 				entries = append(entries, entry{
 					bucket:   b,
 					pkgName:  src.PackageName,
 					cveID:    cveID,
-					advisory: buildAdvisory(cveEntry),
+					advisory: advisory,
 					detail:   buildVulnerabilityDetail(cveEntry),
 				})
 			}
@@ -180,7 +184,7 @@ func (vs VulnSrc) put(entries []entry) error {
 
 // buildAdvisory converts a CVEEntry's Events into the trivy-db Advisory format.
 // Each event represents a version range: Introduced..Fixed (or open-ended if Fixed is empty).
-func buildAdvisory(cve CVEEntry) types.Advisory {
+func buildAdvisory(cve CVEEntry) (types.Advisory, error) {
 	var patched, vulnerable, identifiers []string
 	for _, ev := range cve.Events {
 		switch {
@@ -203,9 +207,17 @@ func buildAdvisory(cve CVEEntry) types.Advisory {
 		// Append even when ev.Identifier is empty so identifiers[i] stays
 		// index-parallel with vulnerable[i] — the scanner pairs them by
 		// index (see parseCustomIdentifiers in trivy/pkg/detector/ospkg/rapidfort).
-		// The EveryBy check below drops Custom entirely when every identifier
-		// is empty (ubuntu/alpine), so those empties never reach the DB.
 		identifiers = append(identifiers, ev.Identifier)
+	}
+
+	// A real feed is uniformly all-empty (ubuntu/alpine) or all-populated
+	// (redhat). A mixed CVE would silently misalign identifiers[i] with
+	// vulnerable[i] downstream and drop ranges from the scanner's identifier
+	// filter, so fail the build here rather than shipping bad advisories.
+	allEmpty := lo.EveryBy(identifiers, func(s string) bool { return s == "" })
+	noneEmpty := lo.EveryBy(identifiers, func(s string) bool { return s != "" })
+	if !allEmpty && !noneEmpty {
+		return types.Advisory{}, oops.Errorf("mixed empty and non-empty identifiers in CVE events")
 	}
 
 	severity := types.SeverityUnknown
@@ -219,16 +231,15 @@ func buildAdvisory(cve CVEEntry) types.Advisory {
 		Severity:           severity,
 	}
 
-	// Only set Custom when at least one event carries an identifier (e.g. redhat).
-	// Ubuntu/alpine events have no identifiers, so Custom stays nil for them.
-	// EveryBy returns true (vacuously) on an empty slice, so no-events → no Custom.
-	if !lo.EveryBy(identifiers, func(s string) bool { return s == "" }) {
+	// Set Custom when identifiers are populated (redhat). Ubuntu/alpine events
+	// have no identifiers, so allEmpty is true and Custom stays nil.
+	if !allEmpty {
 		adv.Custom = RapidFortCustom{
 			Identifiers: identifiers,
 		}
 	}
 
-	return adv
+	return adv, nil
 }
 
 // buildVulnerabilityDetail carries only title and description. Severity is

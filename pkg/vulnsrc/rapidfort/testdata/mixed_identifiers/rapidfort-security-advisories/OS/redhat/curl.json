@@ -1,0 +1,25 @@
+{
+  "package_name": "curl",
+  "advisory": {
+    "9": {
+      "CVE-2023-27536": {
+        "cve_id": "CVE-2023-27536",
+        "title": "curl: mixed-identifier events",
+        "description": "One event carries an identifier and the other does not — this misalignment must fail the DB build.",
+        "severity": "MEDIUM",
+        "status": "fixed",
+        "events": [
+          {
+            "introduced": "7.76.1-14.el9",
+            "fixed": "7.76.1-26.el9_3.3",
+            "identifier": "el9"
+          },
+          {
+            "introduced": "7.76.1-14",
+            "fixed": "7.76.1-26"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -118,7 +118,7 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 			// newBucket doubles as the supported-OS gate: unsupported base
 			// OSes (e.g. debian) fall through to its default case and skip.
 			// The directory name is lowercased and matches ecosystem.Type constants
-			// for the supported OSes; unrecognised names produce an error below.
+			// for the supported OSes; unrecognized names produce an error below.
 			b, err := newBucket(ecosystem.Type(osName), version)
 			if err != nil {
 				vs.logger.Warn("Skipping advisory for unsupported base OS", "path", path, "base_os", osName)

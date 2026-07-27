@@ -12,6 +12,7 @@ import (
 	bolt "go.etcd.io/bbolt"
 
 	"github.com/aquasecurity/trivy-db/pkg/db"
+	"github.com/aquasecurity/trivy-db/pkg/ecosystem"
 	"github.com/aquasecurity/trivy-db/pkg/log"
 	"github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy-db/pkg/utils"
@@ -116,7 +117,9 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 		for version, cveMap := range src.Advisory {
 			// newBucket doubles as the supported-OS gate: unsupported base
 			// OSes (e.g. debian) fall through to its default case and skip.
-			b, err := newBucket(osName, version)
+			// The directory name is lowercased and matches ecosystem.Type constants
+			// for the supported OSes; unrecognised names produce an error below.
+			b, err := newBucket(ecosystem.Type(osName), version)
 			if err != nil {
 				vs.logger.Warn("Skipping advisory for unsupported base OS", "path", path, "base_os", osName)
 				return nil
@@ -255,27 +258,27 @@ func buildVulnerabilityDetail(cve CVEEntry) types.VulnerabilityDetail {
 }
 
 // VulnSrcGetter is used by trivy (the scanner) to query advisories from the DB
-// for a specific base OS (e.g. "ubuntu" or "alpine").
+// for a specific base ecosystem (e.g. ecosystem.Ubuntu, ecosystem.Alpine).
 type VulnSrcGetter struct {
-	baseOS string
+	baseEcosystem ecosystem.Type
 	config
 }
 
-func NewVulnSrcGetter(baseOS string) VulnSrcGetter {
+func NewVulnSrcGetter(baseEcosystem ecosystem.Type) VulnSrcGetter {
 	return VulnSrcGetter{
-		baseOS: baseOS,
+		baseEcosystem: baseEcosystem,
 		config: config{
 			dbc:    db.Config{},
-			logger: log.WithPrefix("rapidfort-" + baseOS),
+			logger: log.WithPrefix("rapidfort-" + string(baseEcosystem)),
 		},
 	}
 }
 
 // Get returns RapidFort advisories for a given package and OS version (e.g. "22.04").
 func (vs VulnSrcGetter) Get(params db.GetParams) ([]types.Advisory, error) {
-	eb := oops.In("rapidfort").With("base_os", vs.baseOS).With("os_version", params.Release).With("package_name", params.PkgName)
+	eb := oops.In("rapidfort").With("base_ecosystem", vs.baseEcosystem).With("os_version", params.Release).With("package_name", params.PkgName)
 
-	b, err := newBucket(vs.baseOS, params.Release)
+	b, err := newBucket(vs.baseEcosystem, params.Release)
 	if err != nil {
 		return nil, eb.Wrapf(err, "failed to create a bucket name")
 	}

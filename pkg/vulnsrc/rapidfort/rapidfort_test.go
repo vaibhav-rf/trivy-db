@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/aquasecurity/trivy-db/pkg/db"
+	"github.com/aquasecurity/trivy-db/pkg/ecosystem"
 	"github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy-db/pkg/vulnsrc/rapidfort"
 	"github.com/aquasecurity/trivy-db/pkg/vulnsrc/vulnerability"
@@ -368,7 +369,7 @@ func TestVulnSrc_Update(t *testing.T) {
 func TestVulnSrc_Get(t *testing.T) {
 	tests := []struct {
 		name     string
-		baseOS   string
+		baseOS   ecosystem.Type
 		osVer    string
 		pkgName  string
 		fixtures []string
@@ -377,7 +378,7 @@ func TestVulnSrc_Get(t *testing.T) {
 	}{
 		{
 			name:    "ubuntu advisory found",
-			baseOS:  "ubuntu",
+			baseOS:  ecosystem.Ubuntu,
 			osVer:   "20.04",
 			pkgName: "curl",
 			fixtures: []string{
@@ -401,7 +402,7 @@ func TestVulnSrc_Get(t *testing.T) {
 		},
 		{
 			name:    "alpine advisory found",
-			baseOS:  "alpine",
+			baseOS:  ecosystem.Alpine,
 			osVer:   "3.18",
 			pkgName: "libssl3",
 			fixtures: []string{
@@ -425,7 +426,7 @@ func TestVulnSrc_Get(t *testing.T) {
 		},
 		{
 			name:    "redhat advisory found",
-			baseOS:  "redhat",
+			baseOS:  ecosystem.RedHat,
 			osVer:   "9",
 			pkgName: "curl",
 			fixtures: []string{
@@ -466,7 +467,7 @@ func TestVulnSrc_Get(t *testing.T) {
 		},
 		{
 			name:    "no advisory for package",
-			baseOS:  "ubuntu",
+			baseOS:  ecosystem.Ubuntu,
 			osVer:   "22.04",
 			pkgName: "curl",
 			fixtures: []string{

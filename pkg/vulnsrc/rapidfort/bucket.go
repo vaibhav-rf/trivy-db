@@ -29,23 +29,23 @@ func (r rapidFortBucket) DataSource() types.DataSource {
 	return r.dataSource
 }
 
-// newBucket resolves the base OS directory name (e.g. "ubuntu", "alpine",
-// "redhat") into a RapidFort bucket, including the DataSource (with BaseID)
-// used when saving. An unsupported base OS results in an error so the caller
-// can skip it — this is the single source of truth for which OSes RapidFort
-// dispatches to; keep it aligned with trivy/pkg/detector/ospkg/rapidfort.
-func newBucket(baseOS, version string) (bucket.DataSourceBucket, error) {
+// newBucket resolves the base ecosystem into a RapidFort bucket, including
+// the DataSource (with BaseID) used when saving. An unsupported base ecosystem
+// results in an error so the caller can skip it — this is the single source
+// of truth for which OSes RapidFort dispatches to; keep it aligned with
+// trivy/pkg/detector/ospkg/rapidfort.
+func newBucket(baseEcosystem ecosystem.Type, version string) (bucket.DataSourceBucket, error) {
 	ds := source
 	var base bucket.Bucket
-	switch baseOS {
-	case "ubuntu":
+	switch baseEcosystem {
+	case ecosystem.Ubuntu:
 		base, ds.BaseID = bucket.NewUbuntu(version), vulnerability.Ubuntu
-	case "alpine":
+	case ecosystem.Alpine:
 		base, ds.BaseID = bucket.NewAlpine(version), vulnerability.Alpine
-	case "redhat":
+	case ecosystem.RedHat:
 		base, ds.BaseID = bucket.NewRedHat(version), vulnerability.RedHat
 	default:
-		return nil, oops.With("base_os", baseOS).Errorf("unsupported base OS")
+		return nil, oops.With("base_ecosystem", baseEcosystem).Errorf("unsupported base ecosystem")
 	}
 	return rapidFortBucket{base: base, dataSource: ds}, nil
 }

@@ -18,3 +18,14 @@
         Name: RapidFort Security Advisories
         URL: https://github.com/rapidfort/security-advisories
         BaseID: redhat
+    - key: rapidfort fedora 39
+      value:
+        ID: rapidfort
+        Name: RapidFort Security Advisories
+        URL: https://github.com/rapidfort/security-advisories
+        BaseID: fedora
+    - key: rapidfort
+      value:
+        ID: rapidfort
+        Name: RapidFort Security Advisories
+        URL: https://github.com/rapidfort/security-advisories

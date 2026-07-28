@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 
-	"github.com/samber/lo"
 	"github.com/samber/oops"
 	bolt "go.etcd.io/bbolt"
 
@@ -91,10 +92,7 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 			return nil
 		}
 
-		// Relative path: {osName}/{pkg}.json (rooted at security-advisories/OS/).
-		// The distro version is NOT in the path — it's carried inside the JSON
-		// (one source file bundles all versions for a given package), so we
-		// split by version in-memory below.
+		// Relative path: {osName}/{pkg}.json; the distro version lives inside the JSON.
 		relPath, err := filepath.Rel(rootDir, path)
 		if err != nil {
 			return eb.With("path", path).Wrapf(err, "failed to make relative path")
@@ -104,39 +102,24 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 			vs.logger.Warn("Skipping file with unexpected path structure", "path", path)
 			return nil
 		}
-		osName := parts[0]
+		osName := ecosystem.Type(parts[0])
 
 		var src SourcePackageAdvisory
 		if err := json.NewDecoder(r).Decode(&src); err != nil {
 			return eb.With("path", path).Wrapf(err, "json decode error")
 		}
 
-		// The source file's shape is {version: {cveID: CVEEntry}}. We fan it
-		// out here into per-(platform, cveID) entries so downstream put() can
-		// write one advisory-detail per (version, package, cveID) tuple.
-		for version, cveMap := range src.Advisory {
-			// newBucket doubles as the supported-OS gate: unsupported base
-			// OSes (e.g. debian) fall through to its default case and skip.
-			// The directory name is lowercased and matches ecosystem.Type constants
-			// for the supported OSes; unrecognized names produce an error below.
-			b, err := newBucket(ecosystem.Type(osName), version)
-			if err != nil {
-				vs.logger.Warn("Skipping advisory for unsupported base OS", "path", path, "base_os", osName)
-				return nil
-			}
-			for cveID, cveEntry := range cveMap {
-				advisory, err := buildAdvisory(cveEntry)
-				if err != nil {
-					return eb.With("path", path).With("cve", cveID).Wrapf(err, "failed to build advisory")
-				}
-				entries = append(entries, entry{
-					bucket:   b,
-					pkgName:  src.PackageName,
-					cveID:    cveID,
-					advisory: advisory,
-					detail:   buildVulnerabilityDetail(cveEntry),
-				})
-			}
+		// ubuntu/alpine feeds already hold one distribution per file. The RedHat
+		// feed mixes RHEL/Fedora/rf ranges, so split it into one advisory set per
+		// distribution first; both shapes then convert the same way.
+		sources := map[ecosystem.Type]SourcePackageAdvisory{
+			osName: src,
+		}
+		if osName == ecosystem.RedHat {
+			sources = vs.splitRedHat(src, path)
+		}
+		for eco, s := range sources {
+			entries = append(entries, vs.toEntries(eco, s, path)...)
 		}
 		return nil
 	})
@@ -144,6 +127,124 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 		return nil, oops.Wrapf(err, "walk error")
 	}
 	return entries, nil
+}
+
+// toEntries converts one distribution's advisories (version -> cveID -> CVEEntry)
+// into DB entries. An unsupported base OS (e.g. debian) is skipped.
+func (vs VulnSrc) toEntries(osName ecosystem.Type, src SourcePackageAdvisory, path string) []entry {
+	var entries []entry
+	for version, cveMap := range src.Advisory {
+		b, err := newBucket(osName, version)
+		if err != nil {
+			// newBucket only rejects the base ecosystem (constant for this file),
+			// not the version, so a failure means the whole file is unsupported
+			// (e.g. debian) — skip it entirely.
+			vs.logger.Warn("Skipping advisory for unsupported base ecosystem", "path", path, "base_ecosystem", osName)
+			return nil
+		}
+		for cveID, cve := range cveMap {
+			entries = append(entries, entry{
+				bucket:   b,
+				pkgName:  src.PackageName,
+				cveID:    cveID,
+				advisory: buildAdvisory(cve.Severity, cve.Events),
+				detail:   buildVulnerabilityDetail(cve),
+			})
+		}
+	}
+	return entries
+}
+
+// splitRedHat re-keys a mixed RedHat feed file into one advisory set per
+// distribution it targets — "redhat" (elN), "fedora" (fcNN) and "rf" — keyed by
+// that distribution's own version. Dropping the RedHat version keys collapses
+// the fcNN/rf ranges the feed replicates identically under every RHEL major.
+func (vs VulnSrc) splitRedHat(src SourcePackageAdvisory, path string) map[ecosystem.Type]SourcePackageAdvisory {
+	out := map[ecosystem.Type]SourcePackageAdvisory{}
+	// Walk the RHEL majors in a stable order so the collected event order and
+	// the CVE meta chosen "on first sight" below don't depend on Go's random
+	// map iteration — the resulting Advisory is written to disk verbatim.
+	majors := make([]string, 0, len(src.Advisory))
+	for major := range src.Advisory {
+		majors = append(majors, major)
+	}
+	sort.Strings(majors)
+
+	for _, major := range majors {
+		for cveID, cve := range src.Advisory[major] {
+			for _, ev := range cve.Events {
+				if ev.Introduced == "" && ev.Fixed == "" {
+					continue
+				}
+				eco, version, ok := redhatRangeTarget(ev.Identifier)
+				if !ok {
+					vs.logger.Warn("Skipping RedHat range with an unusable distribution identifier",
+						"path", path, "cve", cveID, "identifier", ev.Identifier)
+					continue
+				}
+				spa, ok := out[eco]
+				if !ok {
+					spa = SourcePackageAdvisory{
+						PackageName: src.PackageName, Advisory: map[string]map[string]CVEEntry{},
+					}
+					out[eco] = spa
+				}
+				if spa.Advisory[version] == nil {
+					spa.Advisory[version] = map[string]CVEEntry{}
+				}
+				// Copy the CVE meta on first sight, then collect its events.
+				e, ok := spa.Advisory[version][cveID]
+				if !ok {
+					e = cve
+					e.Events = nil
+				}
+				// Skip the identical copies the feed repeats under every RHEL major.
+				if !slices.Contains(e.Events, ev) {
+					e.Events = append(e.Events, ev)
+				}
+				spa.Advisory[version][cveID] = e
+			}
+		}
+	}
+	return out
+}
+
+// redhatRangeTarget maps a RedHat range identifier (elN / fcNN / rf) to the
+// distribution and version it belongs to, returning false for identifiers
+// Trivy can't dispatch to.
+func redhatRangeTarget(identifier string) (eco ecosystem.Type, version string, ok bool) {
+	switch {
+	case identifier == "rf":
+		return ecosystem.RapidFort, "", true
+	case strings.HasPrefix(identifier, "el"):
+		version = strings.TrimPrefix(identifier, "el")
+		return ecosystem.RedHat, version, isVersionNumber(version)
+	case strings.HasPrefix(identifier, "fc"):
+		version = strings.TrimPrefix(identifier, "fc")
+		return ecosystem.Fedora, version, isVersionNumber(version)
+	}
+	return "", "", false
+}
+
+// isVersionNumber reports whether s looks like a distro version number:
+// dot-separated groups of digits, e.g. "9", "44" or "3.18". Empty, leading,
+// trailing or doubled dots (e.g. "", ".", "1.", "1..2") are rejected so a
+// malformed identifier can't produce a bogus bucket like "rapidfort Red Hat .".
+func isVersionNumber(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, part := range strings.Split(s, ".") {
+		if part == "" {
+			return false
+		}
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (vs VulnSrc) put(entries []entry) error {
@@ -159,8 +260,7 @@ func (vs VulnSrc) put(entries []entry) error {
 		// Register the data source once per platform.
 		addedDataSources := map[string]struct{}{}
 		for _, e := range entries {
-			// Cache the platform name: e.bucket.Name() composes it from base OS +
-			// version at call time (string concat), and we reuse it four times below.
+			// Name() concatenates the platform string, so compute it once and reuse.
 			platform := e.bucket.Name()
 			eb := oops.With("platform", platform).With("package", e.pkgName).With("cve", e.cveID)
 
@@ -185,11 +285,13 @@ func (vs VulnSrc) put(entries []entry) error {
 	})
 }
 
-// buildAdvisory converts a CVEEntry's Events into the trivy-db Advisory format.
-// Each event represents a version range: Introduced..Fixed (or open-ended if Fixed is empty).
-func buildAdvisory(cve CVEEntry) (types.Advisory, error) {
-	var patched, vulnerable, identifiers []string
-	for _, ev := range cve.Events {
+// buildAdvisory converts version-range events into the trivy-db Advisory format.
+// Each event represents a version range: Introduced..Fixed (or open-ended if
+// Fixed is empty). Buckets are homogeneous per distribution, so no per-range
+// distribution metadata is stored alongside the ranges.
+func buildAdvisory(severity string, events []Event) types.Advisory {
+	var patched, vulnerable []string
+	for _, ev := range events {
 		switch {
 		case ev.Fixed != "":
 			patched = append(patched, ev.Fixed)
@@ -204,52 +306,31 @@ func buildAdvisory(cve CVEEntry) (types.Advisory, error) {
 		case ev.Introduced != "":
 			// Open vulnerability (no fix): write without space for the same reason.
 			vulnerable = append(vulnerable, fmt.Sprintf(">=%s", ev.Introduced))
-		default:
-			continue
 		}
-		// Append even when ev.Identifier is empty so identifiers[i] stays
-		// index-parallel with vulnerable[i] — the scanner pairs them by
-		// index (see parseCustomIdentifiers in trivy/pkg/detector/ospkg/rapidfort).
-		identifiers = append(identifiers, ev.Identifier)
 	}
 
-	// A real feed is uniformly all-empty (ubuntu/alpine) or all-populated
-	// (redhat). A mixed CVE would silently misalign identifiers[i] with
-	// vulnerable[i] downstream and drop ranges from the scanner's identifier
-	// filter, so fail the build here rather than shipping bad advisories.
-	allEmpty := lo.EveryBy(identifiers, func(s string) bool { return s == "" })
-	noneEmpty := lo.EveryBy(identifiers, func(s string) bool { return s != "" })
-	if !allEmpty && !noneEmpty {
-		return types.Advisory{}, oops.Errorf("mixed empty and non-empty identifiers in CVE events")
+	sev := types.SeverityUnknown
+	if s, err := types.NewSeverity(strings.ToUpper(severity)); err == nil {
+		sev = s
 	}
 
-	severity := types.SeverityUnknown
-	if sev, err := types.NewSeverity(strings.ToUpper(cve.Severity)); err == nil {
-		severity = sev
-	}
+	// Sort for a stable on-disk DB: events for the same distribution can be
+	// collected from several RHEL majors (see splitRedHat), so their source
+	// order is not guaranteed. The lists are independent (no per-range
+	// identifiers), so sorting each on its own is safe.
+	sort.Strings(patched)
+	sort.Strings(vulnerable)
 
-	adv := types.Advisory{
+	return types.Advisory{
 		PatchedVersions:    patched,
 		VulnerableVersions: vulnerable,
-		Severity:           severity,
+		Severity:           sev,
 	}
-
-	// Set Custom when identifiers are populated (redhat). Ubuntu/alpine events
-	// have no identifiers, so allEmpty is true and Custom stays nil.
-	if !allEmpty {
-		adv.Custom = RapidFortCustom{
-			Identifiers: identifiers,
-		}
-	}
-
-	return adv, nil
 }
 
-// buildVulnerabilityDetail carries only title and description. Severity is
-// deliberately omitted: RapidFort is a curated derivative (like root.io), so
-// per-package severity lives in Advisory. Setting it here too would let
-// FillInfo override the curated value with the base-OS severity via
-// VendorSeverity[BaseID] when the same CVE exists in the base feed.
+// buildVulnerabilityDetail carries only prose (title, description). Severity
+// stays in Advisory (per-package), not here, so FillInfo can't override
+// RapidFort's curated severity with the base-OS VendorSeverity.
 func buildVulnerabilityDetail(cve CVEEntry) types.VulnerabilityDetail {
 	return types.VulnerabilityDetail{
 		Title:       cve.Title,

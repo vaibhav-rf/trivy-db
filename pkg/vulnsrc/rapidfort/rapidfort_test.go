@@ -154,6 +154,9 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 				},
 				{
+					// RHEL ranges only: the fc39/rf ranges of the same CVE are
+					// routed into their own buckets below, so no Custom
+					// identifiers are needed anymore.
 					Key: []string{
 						"advisory-detail",
 						"CVE-2023-27536",
@@ -161,16 +164,64 @@ func TestVulnSrc_Update(t *testing.T) {
 						"curl",
 					},
 					Value: types.Advisory{
-						PatchedVersions:    []string{"7.76.1-26.el9_3.3", "7.76.1-26.fc39"},
-						VulnerableVersions: []string{">= 7.76.1-14.el9, < 7.76.1-26.el9_3.3", ">= 7.76.1-14.fc39, < 7.76.1-26.fc39"},
+						PatchedVersions:    []string{"7.76.1-26.el9_3.3"},
+						VulnerableVersions: []string{">= 7.76.1-14.el9, < 7.76.1-26.el9_3.3"},
 						Severity:           types.SeverityMedium,
-						Custom: map[string]any{
-							"identifiers": []any{"el9", "fc39"},
-						},
 					},
 				},
 				{
-					// Open vulnerability: no patched version
+					Key: []string{
+						"data-source",
+						"rapidfort fedora 39",
+					},
+					Value: types.DataSource{
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "fedora",
+					},
+				},
+				{
+					Key: []string{
+						"advisory-detail",
+						"CVE-2023-27536",
+						"rapidfort fedora 39",
+						"curl",
+					},
+					Value: types.Advisory{
+						PatchedVersions:    []string{"7.76.1-26.fc39"},
+						VulnerableVersions: []string{">= 7.76.1-14.fc39, < 7.76.1-26.fc39"},
+						Severity:           types.SeverityMedium,
+					},
+				},
+				{
+					Key: []string{
+						"data-source",
+						"rapidfort",
+					},
+					Value: types.DataSource{
+						ID:   vulnerability.RapidFort,
+						Name: "RapidFort Security Advisories",
+						URL:  "https://github.com/rapidfort/security-advisories",
+					},
+				},
+				{
+					Key: []string{
+						"advisory-detail",
+						"CVE-2023-27536",
+						"rapidfort",
+						"curl",
+					},
+					Value: types.Advisory{
+						PatchedVersions:    []string{"7.76.1-26.rf"},
+						VulnerableVersions: []string{">= 7.76.1-14.rf, < 7.76.1-26.rf"},
+						Severity:           types.SeverityMedium,
+					},
+				},
+				{
+					// Open vulnerability: no patched version. The source entry
+					// also carries a range without an identifier — it must be
+					// skipped, so only the el9 range remains.
 					Key: []string{
 						"advisory-detail",
 						"CVE-2024-99999",
@@ -180,9 +231,6 @@ func TestVulnSrc_Update(t *testing.T) {
 					Value: types.Advisory{
 						VulnerableVersions: []string{">=7.76.1-14.el9"},
 						Severity:           types.SeverityHigh,
-						Custom: map[string]any{
-							"identifiers": []any{"el9"},
-						},
 					},
 				},
 				{
@@ -313,11 +361,69 @@ func TestVulnSrc_Update(t *testing.T) {
 					Key:   []string{"vulnerability-id", "CVE-2023-38039"},
 					Value: map[string]any{},
 				},
+				// The redhat source file declares the same CVE under the "8"
+				// and "9" version keys with an identical fc39 range in both.
+				// The el ranges go to their own RHEL-major buckets, while the
+				// replicated fc39 range must be deduplicated into a single
+				// fedora bucket entry.
+				{
+					Key: []string{"data-source", "rapidfort Red Hat 8"},
+					Value: types.DataSource{
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "redhat",
+					},
+				},
+				{
+					Key: []string{
+						"advisory-detail",
+						"CVE-2023-27536",
+						"rapidfort Red Hat 8",
+						"curl",
+					},
+					Value: types.Advisory{
+						VulnerableVersions: []string{">=7.61.1-14.el8"},
+						Severity:           types.SeverityMedium,
+					},
+				},
+				{
+					Key: []string{
+						"advisory-detail",
+						"CVE-2023-27536",
+						"rapidfort Red Hat 9",
+						"curl",
+					},
+					Value: types.Advisory{
+						PatchedVersions:    []string{"7.76.1-26.el9_3.3"},
+						VulnerableVersions: []string{">= 7.76.1-14.el9, < 7.76.1-26.el9_3.3"},
+						Severity:           types.SeverityMedium,
+					},
+				},
+				{
+					Key: []string{
+						"advisory-detail",
+						"CVE-2023-27536",
+						"rapidfort fedora 39",
+						"curl",
+					},
+					Value: types.Advisory{
+						PatchedVersions:    []string{"7.76.1-26.fc39"},
+						VulnerableVersions: []string{">= 7.76.1-14.fc39, < 7.76.1-26.fc39"},
+						Severity:           types.SeverityMedium,
+					},
+				},
 			},
 			// The empty "18.04" version bucket in the source file must not
 			// produce any entries: no data-source key for that platform and,
 			// since no CVE advisory-detail exists to point at it, no downstream
 			// bucket carries the platform name either.
+			noBuckets: [][]string{
+				// A range whose identifier isn't a real distro version (here
+				// the "fcrawhide" event on CVE-2023-27536 under major 9) is
+				// skipped, not turned into a "rapidfort fedora rawhide" bucket.
+				{"advisory-detail", "CVE-2023-27536", "rapidfort fedora rawhide"},
+			},
 		},
 		{
 			// Malformed path: a JSON file at security-advisories/OS/curl.json
@@ -342,14 +448,6 @@ func TestVulnSrc_Update(t *testing.T) {
 			name:    "sad path - invalid JSON",
 			dir:     filepath.Join("testdata", "sad"),
 			wantErr: "json decode error",
-		},
-		{
-			// A CVE where one event carries an identifier and another doesn't
-			// would silently misalign the identifier list with vulnerable
-			// versions on the scanner side, so parse must reject the file.
-			name:    "mixed empty and non-empty identifiers fail the build",
-			dir:     filepath.Join("testdata", "mixed_identifiers"),
-			wantErr: "mixed empty and non-empty identifiers",
 		},
 	}
 
@@ -436,12 +534,9 @@ func TestVulnSrc_Get(t *testing.T) {
 			want: []types.Advisory{
 				{
 					VulnerabilityID:    "CVE-2023-27536",
-					VulnerableVersions: []string{">= 7.76.1-14.el9, < 7.76.1-26.el9_3.3", ">= 7.76.1-14.fc39, < 7.76.1-26.fc39"},
-					PatchedVersions:    []string{"7.76.1-26.el9_3.3", "7.76.1-26.fc39"},
+					VulnerableVersions: []string{">= 7.76.1-14.el9, < 7.76.1-26.el9_3.3"},
+					PatchedVersions:    []string{"7.76.1-26.el9_3.3"},
 					Severity:           types.SeverityMedium,
-					Custom: map[string]any{
-						"identifiers": []any{"el9", "fc39"},
-					},
 					DataSource: &types.DataSource{
 						ID:     vulnerability.RapidFort,
 						Name:   "RapidFort Security Advisories",
@@ -453,14 +548,58 @@ func TestVulnSrc_Get(t *testing.T) {
 					VulnerabilityID:    "CVE-2024-99999",
 					VulnerableVersions: []string{">=7.76.1-14.el9"},
 					Severity:           types.SeverityHigh,
-					Custom: map[string]any{
-						"identifiers": []any{"el9"},
-					},
 					DataSource: &types.DataSource{
 						ID:     vulnerability.RapidFort,
 						Name:   "RapidFort Security Advisories",
 						URL:    "https://github.com/rapidfort/security-advisories",
 						BaseID: "redhat",
+					},
+				},
+			},
+		},
+		{
+			name:    "fedora advisory found",
+			baseOS:  ecosystem.Fedora,
+			osVer:   "39",
+			pkgName: "curl",
+			fixtures: []string{
+				"testdata/fixtures/happy.yaml",
+				"testdata/fixtures/data-source.yaml",
+			},
+			want: []types.Advisory{
+				{
+					VulnerabilityID:    "CVE-2023-27536",
+					VulnerableVersions: []string{">= 7.76.1-14.fc39, < 7.76.1-26.fc39"},
+					PatchedVersions:    []string{"7.76.1-26.fc39"},
+					Severity:           types.SeverityMedium,
+					DataSource: &types.DataSource{
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "fedora",
+					},
+				},
+			},
+		},
+		{
+			name:    "rf advisory found",
+			baseOS:  ecosystem.RapidFort,
+			osVer:   "",
+			pkgName: "curl",
+			fixtures: []string{
+				"testdata/fixtures/happy.yaml",
+				"testdata/fixtures/data-source.yaml",
+			},
+			want: []types.Advisory{
+				{
+					VulnerabilityID:    "CVE-2023-27536",
+					VulnerableVersions: []string{">= 7.76.1-14.rf, < 7.76.1-26.rf"},
+					PatchedVersions:    []string{"7.76.1-26.rf"},
+					Severity:           types.SeverityMedium,
+					DataSource: &types.DataSource{
+						ID:   vulnerability.RapidFort,
+						Name: "RapidFort Security Advisories",
+						URL:  "https://github.com/rapidfort/security-advisories",
 					},
 				},
 			},

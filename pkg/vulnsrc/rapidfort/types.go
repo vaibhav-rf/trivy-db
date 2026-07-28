@@ -23,12 +23,5 @@ type CVEEntry struct {
 type Event struct {
 	Introduced string `json:"introduced,omitempty"`
 	Fixed      string `json:"fixed,omitempty"`
-	Identifier string `json:"identifier,omitempty"` // e.g. "el9", "fc39"; absent for ubuntu/alpine
-}
-
-// RapidFortCustom rides on types.Advisory.Custom to carry per-event metadata.
-// Identifiers is index-parallel to types.Advisory.VulnerableVersions: for
-// range i, Identifiers[i] is the distro tag (e.g. "el9") for VulnerableVersions[i].
-type RapidFortCustom struct {
-	Identifiers []string `json:"identifiers,omitempty"`
+	Identifier string `json:"identifier,omitempty"` // RedHat feed only: "elN", "fcNN" or "rf"; absent for ubuntu/alpine
 }

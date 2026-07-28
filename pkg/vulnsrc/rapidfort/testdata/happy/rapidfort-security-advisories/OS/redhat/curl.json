@@ -18,6 +18,11 @@
             "introduced": "7.76.1-14.fc39",
             "fixed": "7.76.1-26.fc39",
             "identifier": "fc39"
+          },
+          {
+            "introduced": "7.76.1-14.rf",
+            "fixed": "7.76.1-26.rf",
+            "identifier": "rf"
           }
         ]
       },
@@ -31,6 +36,9 @@
           {
             "introduced": "7.76.1-14.el9",
             "identifier": "el9"
+          },
+          {
+            "introduced": "1.0"
           }
         ]
       }

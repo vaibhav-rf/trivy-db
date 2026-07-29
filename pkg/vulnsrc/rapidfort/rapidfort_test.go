@@ -142,6 +142,40 @@ func TestVulnSrc_Update(t *testing.T) {
 					Value: map[string]any{},
 				},
 				{
+					// Event with a fixed version but no introduced bound:
+					// the vulnerable range is written as a bare "<fixed"
+					// (no space, so the space-based splitter keeps it intact).
+					Key: []string{
+						"advisory-detail",
+						"CVE-2024-0001",
+						"rapidfort alpine 3.18",
+						"libssl3",
+					},
+					Value: types.Advisory{
+						PatchedVersions:    []string{"3.1.5-r0"},
+						VulnerableVersions: []string{"<3.1.5-r0"},
+						Severity:           types.SeverityLow,
+					},
+				},
+				{
+					Key: []string{
+						"vulnerability-detail",
+						"CVE-2024-0001",
+						"rapidfort",
+					},
+					Value: types.VulnerabilityDetail{
+						Title:       "openssl: hypothetical fix without a known introduced version",
+						Description: "A hypothetical openssl vulnerability whose fixed build is known but the introduced version is not.",
+					},
+				},
+				{
+					Key: []string{
+						"vulnerability-id",
+						"CVE-2024-0001",
+					},
+					Value: map[string]any{},
+				},
+				{
 					Key: []string{
 						"data-source",
 						"rapidfort Red Hat 9",

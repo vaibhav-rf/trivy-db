@@ -119,7 +119,7 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 			sources = vs.splitRedHat(src, path)
 		}
 		for eco, s := range sources {
-			entries = append(entries, vs.toEntries(eco, s, path)...)
+			entries = append(entries, toEntries(eco, s)...)
 		}
 		return nil
 	})
@@ -130,16 +130,16 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 }
 
 // toEntries converts one distribution's advisories (version -> cveID -> CVEEntry)
-// into DB entries. An unsupported base OS (e.g. debian) is skipped.
-func (vs VulnSrc) toEntries(osName ecosystem.Type, src SourcePackageAdvisory, path string) []entry {
+// into DB entries. An unsupported base OS (e.g. debian) is skipped silently:
+// RapidFort owns which OSes its feed ships, so an OS this build doesn't ingest
+// is expected, not something to warn about on every file.
+func toEntries(osName ecosystem.Type, src SourcePackageAdvisory) []entry {
 	var entries []entry
 	for version, cveMap := range src.Advisory {
 		b, err := newBucket(osName, version)
 		if err != nil {
 			// newBucket only rejects the base ecosystem (constant for this file),
-			// not the version, so a failure means the whole file is unsupported
-			// (e.g. debian) — skip it entirely.
-			vs.logger.Warn("Skipping advisory for unsupported base ecosystem", "path", path, "base_ecosystem", osName)
+			// not the version, so a failure means the whole file is unsupported.
 			return nil
 		}
 		for cveID, cve := range cveMap {

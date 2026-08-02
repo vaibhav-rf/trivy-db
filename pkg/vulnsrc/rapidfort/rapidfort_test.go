@@ -460,6 +460,78 @@ func TestVulnSrc_Update(t *testing.T) {
 			},
 		},
 		{
+			// The Ubuntu feed can bundle rf-tagged and ubuntu-tagged ranges in
+			// the same CVE. splitUbuntu must route rf ranges to the bare
+			// "rapidfort" bucket and ubuntu ranges to "rapidfort ubuntu <ver>"
+			// so the scanner (which no longer post-filters by identifier) can
+			// pick the right one via bucket routing alone.
+			name: "ubuntu split - rf and ubuntu ranges land in separate buckets",
+			dir:  filepath.Join("testdata", "split_ubuntu"),
+			wantValues: []vulnsrctest.WantValues{
+				{
+					Key: []string{"data-source", "rapidfort ubuntu 22.04"},
+					Value: types.DataSource{
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "ubuntu",
+					},
+				},
+				{
+					Key: []string{"data-source", "rapidfort"},
+					Value: types.DataSource{
+						ID:   vulnerability.RapidFort,
+						Name: "RapidFort Security Advisories",
+						URL:  "https://github.com/rapidfort/security-advisories",
+					},
+				},
+				{
+					// ubuntu range keeps its ubuntu-flavored fix in the Ubuntu bucket.
+					Key: []string{
+						"advisory-detail",
+						"CVE-2025-69648",
+						"rapidfort ubuntu 22.04",
+						"rf-binutils",
+					},
+					Value: types.Advisory{
+						PatchedVersions:    []string{"0:2.46-1ubuntu1"},
+						VulnerableVersions: []string{">= 0:2.42-4ubuntu2.10, < 0:2.46-1ubuntu1"},
+						Severity:           types.SeverityMedium,
+					},
+				},
+				{
+					// rf range lands in the distribution-less "rapidfort" bucket
+					// so a plain-ubuntu package can't spuriously match it.
+					Key: []string{
+						"advisory-detail",
+						"CVE-2025-69648",
+						"rapidfort",
+						"rf-binutils",
+					},
+					Value: types.Advisory{
+						PatchedVersions:    []string{"0:2.46-10rfubu"},
+						VulnerableVersions: []string{">= 0:0, < 0:2.46-10rfubu"},
+						Severity:           types.SeverityMedium,
+					},
+				},
+				{
+					Key: []string{
+						"vulnerability-detail",
+						"CVE-2025-69648",
+						"rapidfort",
+					},
+					Value: types.VulnerabilityDetail{
+						Title:       "binutils readelf DoS",
+						Description: "GNU Binutils readelf contains a denial-of-service vulnerability when processing crafted DWARF data.",
+					},
+				},
+				{
+					Key:   []string{"vulnerability-id", "CVE-2025-69648"},
+					Value: map[string]any{},
+				},
+			},
+		},
+		{
 			// Malformed path: a JSON file at security-advisories/OS/curl.json
 			// (missing the {osName}/ level) is skipped by the len(parts) < 2
 			// guard in parse(). If every file in the tree is malformed, parse

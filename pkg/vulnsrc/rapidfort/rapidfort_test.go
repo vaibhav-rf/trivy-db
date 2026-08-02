@@ -231,7 +231,7 @@ func TestVulnSrc_Update(t *testing.T) {
 				{
 					Key: []string{
 						"data-source",
-						"rapidfort",
+						"rapidfort redhat",
 					},
 					Value: types.DataSource{
 						ID:   vulnerability.RapidFort,
@@ -243,7 +243,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					Key: []string{
 						"advisory-detail",
 						"CVE-2023-27536",
-						"rapidfort",
+						"rapidfort redhat",
 						"curl",
 					},
 					Value: types.Advisory{
@@ -461,10 +461,12 @@ func TestVulnSrc_Update(t *testing.T) {
 		},
 		{
 			// The Ubuntu feed can bundle rf-tagged and ubuntu-tagged ranges in
-			// the same CVE. splitUbuntu must route rf ranges to the bare
-			// "rapidfort" bucket and ubuntu ranges to "rapidfort ubuntu <ver>"
-			// so the scanner (which no longer post-filters by identifier) can
-			// pick the right one via bucket routing alone.
+			// the same CVE. splitUbuntu must route rf ranges to the dpkg-only
+			// "rapidfort ubuntu" bucket and ubuntu ranges to "rapidfort ubuntu
+			// <ver>" so the scanner (which no longer post-filters by
+			// identifier) picks the right one via bucket routing alone. The rf
+			// bucket is distinct from the RPM-format "rapidfort redhat" bucket
+			// because the dpkg comparator must never see RPM-format ranges.
 			name: "ubuntu split - rf and ubuntu ranges land in separate buckets",
 			dir:  filepath.Join("testdata", "split_ubuntu"),
 			wantValues: []vulnsrctest.WantValues{
@@ -478,7 +480,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 				},
 				{
-					Key: []string{"data-source", "rapidfort"},
+					Key: []string{"data-source", "rapidfort ubuntu"},
 					Value: types.DataSource{
 						ID:   vulnerability.RapidFort,
 						Name: "RapidFort Security Advisories",
@@ -500,12 +502,14 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 				},
 				{
-					// rf range lands in the distribution-less "rapidfort" bucket
-					// so a plain-ubuntu package can't spuriously match it.
+					// rf range lands in the dpkg-only "rapidfort ubuntu" bucket
+					// so a plain-ubuntu package can't spuriously match it, and
+					// RPM ranges (from RedHat rf) can't be dpkg-compared against
+					// it either.
 					Key: []string{
 						"advisory-detail",
 						"CVE-2025-69648",
-						"rapidfort",
+						"rapidfort ubuntu",
 						"rf-binutils",
 					},
 					Value: types.Advisory{

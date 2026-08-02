@@ -272,10 +272,13 @@ func (vs VulnSrc) splitUbuntu(src SourcePackageAdvisory, path string) map[ecosys
 // ubuntuRangeTarget maps an Ubuntu range identifier ("ubuntu" / "rf") to the
 // distribution and version it belongs to. An empty identifier defaults to
 // "ubuntu" (backward compat with pre-annotation files that carried no tag).
+// The "rf" identifier lands in RapidFortUbuntu (bucket "rapidfort ubuntu"),
+// distinct from RapidFort's RPM-format bucket ("rapidfort redhat"): the two
+// use different version comparators and must not share a bucket.
 func ubuntuRangeTarget(identifier, ubuntuVer string) (eco ecosystem.Type, version string, ok bool) {
 	switch identifier {
 	case "rf":
-		return ecosystem.RapidFort, "", true
+		return ecosystem.RapidFortUbuntu, "", true
 	case "ubuntu", "":
 		return ecosystem.Ubuntu, ubuntuVer, true
 	}

@@ -291,7 +291,7 @@ func ubuntuRangeTarget(identifier, ubuntuVer string) (eco ecosystem.Type, versio
 func redhatRangeTarget(identifier string) (eco ecosystem.Type, version string, ok bool) {
 	switch {
 	case identifier == "rf":
-		return ecosystem.RapidFort, "", true
+		return ecosystem.RapidFortRedHat, "", true
 	case strings.HasPrefix(identifier, "el"):
 		version = strings.TrimPrefix(identifier, "el")
 		return ecosystem.RedHat, version, isVersionNumber(version)

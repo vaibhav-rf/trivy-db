@@ -693,7 +693,7 @@ func TestVulnSrc_Get(t *testing.T) {
 		},
 		{
 			name:    "rf advisory found",
-			baseOS:  ecosystem.RapidFort,
+			baseOS:  ecosystem.RapidFortRedHat,
 			osVer:   "",
 			pkgName: "curl",
 			fixtures: []string{

@@ -45,7 +45,7 @@ const (
 	Chainguard      Type = "chainguard"
 	Echo            Type = "echo"
 	MinimOS         Type = "minimos"
-	RapidFort       Type = "rapidfort"
+	RapidFortRedHat Type = "rapidfort-redhat"
 	RapidFortUbuntu Type = "rapidfort-ubuntu"
 	Seal            Type = "seal"
 )

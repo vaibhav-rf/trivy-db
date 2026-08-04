@@ -109,14 +109,18 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 			return eb.With("path", path).Wrapf(err, "json decode error")
 		}
 
-		// ubuntu/alpine feeds already hold one distribution per file. The RedHat
-		// feed mixes RHEL/Fedora/rf ranges, so split it into one advisory set per
-		// distribution first; both shapes then convert the same way.
+		// alpine feeds already hold one distribution per file. The RedHat feed
+		// mixes RHEL/Fedora/rf ranges and the Ubuntu feed mixes ubuntu/rf ranges,
+		// so split each into one advisory set per distribution first; all shapes
+		// then convert the same way.
 		sources := map[ecosystem.Type]SourcePackageAdvisory{
 			osName: src,
 		}
-		if osName == ecosystem.RedHat {
+		switch osName {
+		case ecosystem.RedHat:
 			sources = vs.splitRedHat(src, path)
+		case ecosystem.Ubuntu:
+			sources = vs.splitUbuntu(src, path)
 		}
 		for eco, s := range sources {
 			entries = append(entries, toEntries(eco, s)...)
@@ -209,13 +213,85 @@ func (vs VulnSrc) splitRedHat(src SourcePackageAdvisory, path string) map[ecosys
 	return out
 }
 
+// splitUbuntu re-keys a mixed Ubuntu feed file into one advisory set per
+// distribution it targets — "ubuntu" and "rf" — keyed by that distribution's
+// own version. rf ranges land in the distribution-less "rapidfort" bucket
+// alongside RedHat's rf events; ubuntu ranges stay in "rapidfort ubuntu <ver>".
+// A missing identifier is treated as "ubuntu" for backward compatibility with
+// pre-annotation feed files.
+func (vs VulnSrc) splitUbuntu(src SourcePackageAdvisory, path string) map[ecosystem.Type]SourcePackageAdvisory {
+	out := map[ecosystem.Type]SourcePackageAdvisory{}
+	// Walk versions in stable order so the collected event order and the
+	// CVE meta chosen "on first sight" below don't depend on Go's random
+	// map iteration — the resulting Advisory is written to disk verbatim.
+	versions := make([]string, 0, len(src.Advisory))
+	for v := range src.Advisory {
+		versions = append(versions, v)
+	}
+	sort.Strings(versions)
+
+	for _, ubuntuVer := range versions {
+		for cveID, cve := range src.Advisory[ubuntuVer] {
+			for _, ev := range cve.Events {
+				if ev.Introduced == "" && ev.Fixed == "" {
+					continue
+				}
+				eco, targetVer, ok := ubuntuRangeTarget(ev.Identifier, ubuntuVer)
+				if !ok {
+					vs.logger.Warn("Skipping Ubuntu range with an unusable distribution identifier",
+						"path", path, "cve", cveID, "identifier", ev.Identifier)
+					continue
+				}
+				spa, ok := out[eco]
+				if !ok {
+					spa = SourcePackageAdvisory{
+						PackageName: src.PackageName, Advisory: map[string]map[string]CVEEntry{},
+					}
+					out[eco] = spa
+				}
+				if spa.Advisory[targetVer] == nil {
+					spa.Advisory[targetVer] = map[string]CVEEntry{}
+				}
+				// Copy the CVE meta on first sight, then collect its events.
+				e, ok := spa.Advisory[targetVer][cveID]
+				if !ok {
+					e = cve
+					e.Events = nil
+				}
+				// Guard against identical duplicates from re-keying.
+				if !slices.Contains(e.Events, ev) {
+					e.Events = append(e.Events, ev)
+				}
+				spa.Advisory[targetVer][cveID] = e
+			}
+		}
+	}
+	return out
+}
+
+// ubuntuRangeTarget maps an Ubuntu range identifier ("ubuntu" / "rf") to the
+// distribution and version it belongs to. An empty identifier defaults to
+// "ubuntu" (backward compat with pre-annotation files that carried no tag).
+// The "rf" identifier lands in RapidFortUbuntu (bucket "rapidfort ubuntu"),
+// distinct from RapidFort's RPM-format bucket ("rapidfort redhat"): the two
+// use different version comparators and must not share a bucket.
+func ubuntuRangeTarget(identifier, ubuntuVer string) (eco ecosystem.Type, version string, ok bool) {
+	switch identifier {
+	case "rf":
+		return ecosystem.RapidFortUbuntu, "", true
+	case "ubuntu", "":
+		return ecosystem.Ubuntu, ubuntuVer, true
+	}
+	return "", "", false
+}
+
 // redhatRangeTarget maps a RedHat range identifier (elN / fcNN / rf) to the
 // distribution and version it belongs to, returning false for identifiers
 // Trivy can't dispatch to.
 func redhatRangeTarget(identifier string) (eco ecosystem.Type, version string, ok bool) {
 	switch {
 	case identifier == "rf":
-		return ecosystem.RapidFort, "", true
+		return ecosystem.RapidFortRedHat, "", true
 	case strings.HasPrefix(identifier, "el"):
 		version = strings.TrimPrefix(identifier, "el")
 		return ecosystem.RedHat, version, isVersionNumber(version)

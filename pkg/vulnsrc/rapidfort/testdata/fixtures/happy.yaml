@@ -47,7 +47,7 @@
             PatchedVersions:
               - "7.76.1-26.fc39"
             Severity: 2
-- bucket: rapidfort
+- bucket: rapidfort redhat
   pairs:
     - bucket: curl
       pairs:

@@ -23,5 +23,5 @@ type CVEEntry struct {
 type Event struct {
 	Introduced string `json:"introduced,omitempty"`
 	Fixed      string `json:"fixed,omitempty"`
-	Identifier string `json:"identifier,omitempty"` // RedHat feed only: "elN", "fcNN" or "rf"; absent for ubuntu/alpine
+	Identifier string `json:"identifier,omitempty"`
 }

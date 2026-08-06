@@ -231,19 +231,20 @@ func TestVulnSrc_Update(t *testing.T) {
 				{
 					Key: []string{
 						"data-source",
-						"rapidfort redhat",
+						"rapidfort Red Hat",
 					},
 					Value: types.DataSource{
-						ID:   vulnerability.RapidFort,
-						Name: "RapidFort Security Advisories",
-						URL:  "https://github.com/rapidfort/security-advisories",
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "redhat",
 					},
 				},
 				{
 					Key: []string{
 						"advisory-detail",
 						"CVE-2023-27536",
-						"rapidfort redhat",
+						"rapidfort Red Hat",
 						"curl",
 					},
 					Value: types.Advisory{
@@ -461,12 +462,13 @@ func TestVulnSrc_Update(t *testing.T) {
 		},
 		{
 			// The Ubuntu feed can bundle rf-tagged and ubuntu-tagged ranges in
-			// the same CVE. splitUbuntu must route rf ranges to the dpkg-only
-			// "rapidfort ubuntu" bucket and ubuntu ranges to "rapidfort ubuntu
-			// <ver>" so the scanner (which no longer post-filters by
-			// identifier) picks the right one via bucket routing alone. The rf
-			// bucket is distinct from the RPM-format "rapidfort redhat" bucket
-			// because the dpkg comparator must never see RPM-format ranges.
+			// the same CVE. split must route rf ranges to the dpkg-only
+			// "rapidfort ubuntu" bucket (empty version) and ubuntu ranges to
+			// "rapidfort ubuntu <ver>" so the scanner (which no longer
+			// post-filters by identifier) picks the right one via bucket
+			// routing alone. The rf bucket is distinct from the RPM-format
+			// "rapidfort Red Hat" bucket because the dpkg comparator must
+			// never see RPM-format ranges.
 			name: "ubuntu split - rf and ubuntu ranges land in separate buckets",
 			dir:  filepath.Join("testdata", "split_ubuntu"),
 			wantValues: []vulnsrctest.WantValues{
@@ -482,9 +484,10 @@ func TestVulnSrc_Update(t *testing.T) {
 				{
 					Key: []string{"data-source", "rapidfort ubuntu"},
 					Value: types.DataSource{
-						ID:   vulnerability.RapidFort,
-						Name: "RapidFort Security Advisories",
-						URL:  "https://github.com/rapidfort/security-advisories",
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "ubuntu",
 					},
 				},
 				{
@@ -503,9 +506,9 @@ func TestVulnSrc_Update(t *testing.T) {
 				},
 				{
 					// rf range lands in the dpkg-only "rapidfort ubuntu" bucket
-					// so a plain-ubuntu package can't spuriously match it, and
-					// RPM ranges (from RedHat rf) can't be dpkg-compared against
-					// it either.
+					// (empty version), so a plain-ubuntu package can't spuriously
+					// match it and RPM ranges from "rapidfort Red Hat" can't be
+					// dpkg-compared against it either.
 					Key: []string{
 						"advisory-detail",
 						"CVE-2025-69648",
@@ -693,7 +696,7 @@ func TestVulnSrc_Get(t *testing.T) {
 		},
 		{
 			name:    "rf advisory found",
-			baseOS:  ecosystem.RapidFortRedHat,
+			baseOS:  ecosystem.RedHat,
 			osVer:   "",
 			pkgName: "curl",
 			fixtures: []string{
@@ -707,9 +710,10 @@ func TestVulnSrc_Get(t *testing.T) {
 					PatchedVersions:    []string{"7.76.1-26.rf"},
 					Severity:           types.SeverityMedium,
 					DataSource: &types.DataSource{
-						ID:   vulnerability.RapidFort,
-						Name: "RapidFort Security Advisories",
-						URL:  "https://github.com/rapidfort/security-advisories",
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "redhat",
 					},
 				},
 			},

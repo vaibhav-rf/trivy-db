@@ -118,9 +118,9 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 		}
 		switch osName {
 		case ecosystem.RedHat:
-			sources = vs.splitRedHat(src, path)
+			sources = vs.split(src, path, redhatRangeTarget)
 		case ecosystem.Ubuntu:
-			sources = vs.splitUbuntu(src, path)
+			sources = vs.split(src, path, ubuntuRangeTarget)
 		}
 		for eco, s := range sources {
 			entries = append(entries, toEntries(eco, s)...)
@@ -159,86 +159,36 @@ func toEntries(osName ecosystem.Type, src SourcePackageAdvisory) []entry {
 	return entries
 }
 
-// splitRedHat re-keys a mixed RedHat feed file into one advisory set per
-// distribution it targets — "redhat" (elN), "fedora" (fcNN) and "rf" — keyed by
-// that distribution's own version. Dropping the RedHat version keys collapses
-// the fcNN/rf ranges the feed replicates identically under every RHEL major.
-func (vs VulnSrc) splitRedHat(src SourcePackageAdvisory, path string) map[ecosystem.Type]SourcePackageAdvisory {
-	out := map[ecosystem.Type]SourcePackageAdvisory{}
-	// Walk the RHEL majors in a stable order so the collected event order and
-	// the CVE meta chosen "on first sight" below don't depend on Go's random
-	// map iteration — the resulting Advisory is written to disk verbatim.
-	majors := make([]string, 0, len(src.Advisory))
-	for major := range src.Advisory {
-		majors = append(majors, major)
-	}
-	sort.Strings(majors)
+// rangeTargetFunc maps an event's identifier plus the file's top-level version
+// key to the (ecosystem, version) of the bucket the event belongs in. Returning
+// false skips the event with a warning.
+type rangeTargetFunc func(identifier, fileVersion string) (ecosystem.Type, string, bool)
 
-	for _, major := range majors {
-		for cveID, cve := range src.Advisory[major] {
-			for _, ev := range cve.Events {
-				if ev.Introduced == "" && ev.Fixed == "" {
-					continue
-				}
-				eco, version, ok := redhatRangeTarget(ev.Identifier)
-				if !ok {
-					vs.logger.Warn("Skipping RedHat range with an unusable distribution identifier",
-						"path", path, "cve", cveID, "identifier", ev.Identifier)
-					continue
-				}
-				spa, ok := out[eco]
-				if !ok {
-					spa = SourcePackageAdvisory{
-						PackageName: src.PackageName, Advisory: map[string]map[string]CVEEntry{},
-					}
-					out[eco] = spa
-				}
-				if spa.Advisory[version] == nil {
-					spa.Advisory[version] = map[string]CVEEntry{}
-				}
-				// Copy the CVE meta on first sight, then collect its events.
-				e, ok := spa.Advisory[version][cveID]
-				if !ok {
-					e = cve
-					e.Events = nil
-				}
-				// Skip the identical copies the feed repeats under every RHEL major.
-				if !slices.Contains(e.Events, ev) {
-					e.Events = append(e.Events, ev)
-				}
-				spa.Advisory[version][cveID] = e
-			}
-		}
-	}
-	return out
-}
-
-// splitUbuntu re-keys a mixed Ubuntu feed file into one advisory set per
-// distribution it targets — "ubuntu" and "rf" — keyed by that distribution's
-// own version. rf ranges land in the distribution-less "rapidfort" bucket
-// alongside RedHat's rf events; ubuntu ranges stay in "rapidfort ubuntu <ver>".
-// A missing identifier is treated as "ubuntu" for backward compatibility with
-// pre-annotation feed files.
-func (vs VulnSrc) splitUbuntu(src SourcePackageAdvisory, path string) map[ecosystem.Type]SourcePackageAdvisory {
+// split re-keys a mixed feed file into one advisory set per distribution it
+// targets. rangeTarget owns the per-OS routing rules (elN/fcNN/rf for RedHat;
+// ubuntu/rf for Ubuntu). Dropping the source file's top-level version key
+// collapses ranges the feed replicates identically across those keys — the
+// scanner picks buckets by rangeTarget's output, not by the file's key.
+func (vs VulnSrc) split(src SourcePackageAdvisory, path string, rangeTarget rangeTargetFunc) map[ecosystem.Type]SourcePackageAdvisory {
 	out := map[ecosystem.Type]SourcePackageAdvisory{}
-	// Walk versions in stable order so the collected event order and the
-	// CVE meta chosen "on first sight" below don't depend on Go's random
-	// map iteration — the resulting Advisory is written to disk verbatim.
+	// Walk versions in stable order so the collected event order and the CVE
+	// meta chosen "on first sight" below don't depend on Go's random map
+	// iteration — the resulting Advisory is written to disk verbatim.
 	versions := make([]string, 0, len(src.Advisory))
 	for v := range src.Advisory {
 		versions = append(versions, v)
 	}
 	sort.Strings(versions)
 
-	for _, ubuntuVer := range versions {
-		for cveID, cve := range src.Advisory[ubuntuVer] {
+	for _, fileVer := range versions {
+		for cveID, cve := range src.Advisory[fileVer] {
 			for _, ev := range cve.Events {
 				if ev.Introduced == "" && ev.Fixed == "" {
 					continue
 				}
-				eco, targetVer, ok := ubuntuRangeTarget(ev.Identifier, ubuntuVer)
+				eco, targetVer, ok := rangeTarget(ev.Identifier, fileVer)
 				if !ok {
-					vs.logger.Warn("Skipping Ubuntu range with an unusable distribution identifier",
+					vs.logger.Warn("Skipping range with an unusable distribution identifier",
 						"path", path, "cve", cveID, "identifier", ev.Identifier)
 					continue
 				}
@@ -258,7 +208,7 @@ func (vs VulnSrc) splitUbuntu(src SourcePackageAdvisory, path string) map[ecosys
 					e = cve
 					e.Events = nil
 				}
-				// Guard against identical duplicates from re-keying.
+				// Skip identical copies the feed repeats across file-version keys.
 				if !slices.Contains(e.Events, ev) {
 					e.Events = append(e.Events, ev)
 				}
@@ -269,29 +219,32 @@ func (vs VulnSrc) splitUbuntu(src SourcePackageAdvisory, path string) map[ecosys
 	return out
 }
 
-// ubuntuRangeTarget maps an Ubuntu range identifier ("ubuntu" / "rf") to the
-// distribution and version it belongs to. An empty identifier defaults to
-// "ubuntu" (backward compat with pre-annotation files that carried no tag).
-// The "rf" identifier lands in RapidFortUbuntu (bucket "rapidfort ubuntu"),
-// distinct from RapidFort's RPM-format bucket ("rapidfort redhat"): the two
-// use different version comparators and must not share a bucket.
+// ubuntuRangeTarget maps an Ubuntu event's identifier to its bucket.
+// "rf" → the family-level "rapidfort ubuntu" bucket (empty version) — kept
+// separate from the RPM-format "rapidfort Red Hat" bucket so the dpkg
+// comparator never sees an RPM range and vice versa.
+// "ubuntu" / empty identifier → the versioned "rapidfort ubuntu <ver>" bucket
+// (empty is accepted for backward compatibility with pre-annotation files).
 func ubuntuRangeTarget(identifier, ubuntuVer string) (eco ecosystem.Type, version string, ok bool) {
 	switch identifier {
 	case "rf":
-		return ecosystem.RapidFortUbuntu, "", true
+		return ecosystem.Ubuntu, "", true
 	case "ubuntu", "":
 		return ecosystem.Ubuntu, ubuntuVer, true
 	}
 	return "", "", false
 }
 
-// redhatRangeTarget maps a RedHat range identifier (elN / fcNN / rf) to the
-// distribution and version it belongs to, returning false for identifiers
-// Trivy can't dispatch to.
-func redhatRangeTarget(identifier string) (eco ecosystem.Type, version string, ok bool) {
+// redhatRangeTarget maps a RedHat event's identifier to its bucket.
+// "rf" → the family-level "rapidfort Red Hat" bucket (empty version), keeping
+// RPM-format rf ranges out of the dpkg-format "rapidfort ubuntu" bucket.
+// "elN" → "rapidfort Red Hat N"; "fcNN" → "rapidfort fedora NN".
+// The file's top-level version key is ignored (RedHat feeds re-list the same
+// fcNN/rf ranges under every RHEL major, and dedup collapses them at write time).
+func redhatRangeTarget(identifier, _ string) (eco ecosystem.Type, version string, ok bool) {
 	switch {
 	case identifier == "rf":
-		return ecosystem.RapidFortRedHat, "", true
+		return ecosystem.RedHat, "", true
 	case strings.HasPrefix(identifier, "el"):
 		version = strings.TrimPrefix(identifier, "el")
 		return ecosystem.RedHat, version, isVersionNumber(version)

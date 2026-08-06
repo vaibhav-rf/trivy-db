@@ -9,14 +9,7 @@ import (
 	"github.com/aquasecurity/trivy-db/pkg/vulnsrc/vulnerability"
 )
 
-// rapidFortBucket wraps a base OS bucket. RapidFort advisories reuse the base
-// OS naming (e.g. "ubuntu 20.04", "Red Hat 9") prefixed with "rapidfort " so
-// the platform name stays consistent with the original distributions.
-// RapidFort's own rebuilds ("rf") share the same base bucket type with an
-// empty version, producing names like "rapidfort Red Hat" and "rapidfort
-// ubuntu" — one per base OS family, so rf ranges never share a bucket across
-// package formats (which would let the wrong version comparator interpret a
-// range string).
+// rapidFortBucket names a bucket after the base OS bucket it wraps: "rapidfort ubuntu 22.04", or "rapidfort ubuntu" for the version-less rebuilds.
 type rapidFortBucket struct {
 	base       bucket.Bucket
 	dataSource types.DataSource
@@ -34,12 +27,7 @@ func (r rapidFortBucket) DataSource() types.DataSource {
 	return r.dataSource
 }
 
-// newBucket builds a RapidFort bucket for the given base ecosystem and version.
-// An unsupported base ecosystem returns an error so the caller can skip it.
-// An empty version selects the family-level bucket used for rf-only ranges
-// (e.g. baseEcosystem=RedHat + version="" → "rapidfort Red Hat").
-// This is the single source of truth for which base ecosystems RapidFort
-// dispatches to; keep it aligned with trivy/pkg/detector/ospkg/rapidfort.
+// newBucket builds a RapidFort bucket for the given base ecosystem and version, failing for an ecosystem RapidFort doesn't ship advisories for.
 func newBucket(baseEcosystem ecosystem.Type, version string) (bucket.DataSourceBucket, error) {
 	ds := source
 	var base bucket.Bucket

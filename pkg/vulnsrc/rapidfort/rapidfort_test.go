@@ -255,8 +255,9 @@ func TestVulnSrc_Update(t *testing.T) {
 				},
 				{
 					// Open vulnerability: no patched version. The source entry
-					// also carries a range without an identifier — it must be
-					// skipped, so only the el9 range remains.
+					// also carries a range without an identifier, which belongs
+					// to the release the file lists it under — the same bucket
+					// as the el9 range here.
 					Key: []string{
 						"advisory-detail",
 						"CVE-2024-99999",
@@ -264,7 +265,7 @@ func TestVulnSrc_Update(t *testing.T) {
 						"curl",
 					},
 					Value: types.Advisory{
-						VulnerableVersions: []string{">=7.76.1-14.el9"},
+						VulnerableVersions: []string{">=1.0", ">=7.76.1-14.el9"},
 						Severity:           types.SeverityHigh,
 					},
 				},

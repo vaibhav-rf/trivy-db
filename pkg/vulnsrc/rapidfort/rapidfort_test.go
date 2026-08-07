@@ -559,6 +559,15 @@ func TestVulnSrc_Update(t *testing.T) {
 			wantErr: "no RapidFort advisories to save",
 		},
 		{
+			// A bare dist tag ("el") names no release and an identifier from a
+			// distribution Trivy doesn't dispatch to ("sles15") names no bucket,
+			// so both ranges are dropped instead of falling back to a bucket
+			// they don't belong to — here that leaves the file with no entries.
+			name:    "unusable identifiers are dropped, not guessed",
+			dir:     filepath.Join("testdata", "unusable_identifier"),
+			wantErr: "no RapidFort advisories to save",
+		},
+		{
 			name:    "sad path - invalid JSON",
 			dir:     filepath.Join("testdata", "sad"),
 			wantErr: "json decode error",
@@ -729,6 +738,20 @@ func TestVulnSrc_Get(t *testing.T) {
 				"testdata/fixtures/data-source.yaml",
 			},
 			want: nil,
+		},
+		{
+			// RapidFort dispatches to a fixed set of base OSes, so a getter built
+			// for any other one has no bucket to read and must say so rather than
+			// report the package as clean.
+			name:    "sad path - base OS RapidFort doesn't dispatch to",
+			baseOS:  ecosystem.Debian,
+			osVer:   "12",
+			pkgName: "curl",
+			fixtures: []string{
+				"testdata/fixtures/happy.yaml",
+				"testdata/fixtures/data-source.yaml",
+			},
+			wantErr: "unsupported base ecosystem",
 		},
 	}
 

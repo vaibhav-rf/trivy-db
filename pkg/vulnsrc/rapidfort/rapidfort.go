@@ -143,7 +143,7 @@ func toEntries(pkgName string, buckets map[bucket.DataSourceBucket]map[string]CV
 				bucket:   b,
 				pkgName:  pkgName,
 				cveID:    cveID,
-				advisory: buildAdvisory(cve.Severity, cve.Events),
+				advisory: buildAdvisory(cve),
 				detail:   buildVulnerabilityDetail(cve),
 			})
 		}
@@ -208,9 +208,10 @@ func resolveBucket(eco ecosystem.Type, ecoVer, identifier string) (bucket.DataSo
 	// RapidFort's rebuilds are not tied to a distro release: they keep the feed's OS but drop the version.
 	case identifier == rapidFortIdentifier:
 		ecoVer = ""
-	// The RPM dist tags of the RedHat feed name the distribution and carry its version.
+	// "elN" is the dist tag of the Enterprise Linux family, which RedHat, Oracle and the other rebuilds all share, so it names the release while the feed still names the distribution.
 	case strings.HasPrefix(identifier, redHatIdentifier):
-		eco, ecoVer = ecosystem.RedHat, strings.TrimPrefix(identifier, redHatIdentifier)
+		ecoVer = strings.TrimPrefix(identifier, redHatIdentifier)
+	// "fcNN" names Fedora itself, which the RPM feeds carry alongside their own ranges.
 	case strings.HasPrefix(identifier, fedoraIdentifier):
 		eco, ecoVer = ecosystem.Fedora, strings.TrimPrefix(identifier, fedoraIdentifier)
 	// The Ubuntu feed tags the distribution's own packages with "ubuntu": they belong to the release the file lists them under.
@@ -224,7 +225,8 @@ func resolveBucket(eco ecosystem.Type, ecoVer, identifier string) (bucket.DataSo
 		return nil, eb.Errorf("unusable distribution identifier")
 	}
 
-	if ecoVer != "" && !isVersionNumber(ecoVer) {
+	// Only the rebuilds are release-less; every other range has to name a release, so a bare dist tag ("el", "fc") or an empty version key is rejected rather than folded into a rebuild bucket.
+	if identifier != rapidFortIdentifier && !isVersionNumber(ecoVer) {
 		return nil, eb.With("version", ecoVer).Errorf("unusable distribution version")
 	}
 	return newBucket(eco, ecoVer)
@@ -294,9 +296,9 @@ func (vs VulnSrc) put(entries []entry) error {
 // Each event represents a version range: Introduced..Fixed (or open-ended if
 // Fixed is empty). Buckets are homogeneous per distribution, so no per-range
 // distribution metadata is stored alongside the ranges.
-func buildAdvisory(severity string, events []Event) types.Advisory {
+func buildAdvisory(cve CVEEntry) types.Advisory {
 	var patched, vulnerable []string
-	for _, ev := range events {
+	for _, ev := range cve.Events {
 		switch {
 		case ev.Fixed != "":
 			patched = append(patched, ev.Fixed)
@@ -315,7 +317,7 @@ func buildAdvisory(severity string, events []Event) types.Advisory {
 	}
 
 	sev := types.SeverityUnknown
-	if s, err := types.NewSeverity(strings.ToUpper(severity)); err == nil {
+	if s, err := types.NewSeverity(strings.ToUpper(cve.Severity)); err == nil {
 		sev = s
 	}
 

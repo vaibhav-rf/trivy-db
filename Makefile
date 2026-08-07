@@ -87,9 +87,6 @@ db-fetch-langs:
 	$(call download_and_extract,https://github.com/CocoaPods/Specs/archive/master.tar.gz,$(CACHE_DIR)/cocoapods-specs)
 	$(call download_and_extract,https://github.com/kubernetes-sigs/cve-feed-osv/archive/main.tar.gz,$(CACHE_DIR)/k8s-cve-feed)
 	$(call download_and_extract,https://github.com/JuliaLang/SecurityAdvisories.jl/archive/refs/heads/generated/osv.tar.gz,$(CACHE_DIR)/julia)
-	## RapidFort advisories are already published as parseable JSON in a git repo,
-	## so we fetch them directly here (same pattern as ghsa, ruby-advisory-db, bitnami-vulndb, etc.)
-	## rather than going through vuln-list-update.
 	$(call download_and_extract,https://github.com/rapidfort/security-advisories/archive/refs/heads/main.tar.gz,$(CACHE_DIR)/rapidfort-security-advisories)
 
 .PHONY: db-build

@@ -64,11 +64,9 @@ func TestVulnSrc_Update(t *testing.T) {
 						Severity:           types.SeverityMedium,
 					},
 				},
-				// vulnerability-detail entries are written by PutVulnerabilityDetail
-				// (see buildVulnerabilityDetail). They carry only the title and
-				// description; severity intentionally lives in Advisory instead
-				// (RapidFort is a curated derivative — see comment on
-				// buildVulnerabilityDetail for the rationale).
+				// Severity lives in Advisory, not VulnerabilityDetail, so
+				// FillInfo can't override RapidFort's curated value with the
+				// base-OS VendorSeverity.
 				{
 					Key: []string{
 						"vulnerability-detail",
@@ -188,9 +186,8 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 				},
 				{
-					// RHEL ranges only: the fc39/rf ranges of the same CVE are
-					// routed into their own buckets below, so no Custom
-					// identifiers are needed anymore.
+					// RHEL ranges only — fc39 and rf ranges of the same CVE
+					// land in their own buckets below.
 					Key: []string{
 						"advisory-detail",
 						"CVE-2023-27536",
@@ -308,17 +305,12 @@ func TestVulnSrc_Update(t *testing.T) {
 			},
 		},
 		{
-			// Multi-version + empty-version case: exercises the in-memory splitting
-			// that this parser now owns (previously done on disk by vuln-list-update).
-			// A single source file at OS/ubuntu/curl.json declares two populated
-			// distro versions (20.04 and 22.04) plus one empty version (18.04).
-			// The parser must fan the file out into two distinct platform buckets
-			// (one per populated version) and must not crash / produce phantom
-			// entries on the empty version.
+			// A single source file that declares multiple distro versions must
+			// fan out into one platform bucket per populated version, and an
+			// empty version must not produce phantom entries.
 			name: "multi-version file - each version becomes its own platform bucket",
 			dir:  filepath.Join("testdata", "multiversion"),
 			wantValues: []vulnsrctest.WantValues{
-				// 20.04 platform derived from the "20.04" key inside the source file.
 				{
 					Key: []string{"data-source", "rapidfort ubuntu 20.04"},
 					Value: types.DataSource{
@@ -342,9 +334,6 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 				},
 				{
-					// vulnerability-detail matches what PutVulnerabilityDetail writes
-					// from buildVulnerabilityDetail (title + description only;
-					// severity lives in Advisory for RapidFort — see rapidfort.go).
 					Key: []string{
 						"vulnerability-detail",
 						"CVE-2020-8169",
@@ -359,7 +348,6 @@ func TestVulnSrc_Update(t *testing.T) {
 					Key:   []string{"vulnerability-id", "CVE-2020-8169"},
 					Value: map[string]any{},
 				},
-				// 22.04 platform derived from the same source file's "22.04" key.
 				{
 					Key: []string{"data-source", "rapidfort ubuntu 22.04"},
 					Value: types.DataSource{
@@ -397,11 +385,9 @@ func TestVulnSrc_Update(t *testing.T) {
 					Key:   []string{"vulnerability-id", "CVE-2023-38039"},
 					Value: map[string]any{},
 				},
-				// The redhat source file declares the same CVE under the "8"
-				// and "9" version keys with an identical fc39 range in both.
-				// The el ranges go to their own RHEL-major buckets, while the
-				// replicated fc39 range must be deduplicated into a single
-				// fedora bucket entry.
+				// The redhat source file lists the same fc39 range under two
+				// RHEL major keys — dedupe must collapse it to a single fedora
+				// bucket entry.
 				{
 					Key: []string{"data-source", "rapidfort Red Hat 8"},
 					Value: types.DataSource{
@@ -450,26 +436,17 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 				},
 			},
-			// The empty "18.04" version bucket in the source file must not
-			// produce any entries: no data-source key for that platform and,
-			// since no CVE advisory-detail exists to point at it, no downstream
-			// bucket carries the platform name either.
+			// A non-numeric identifier version (e.g. "fcrawhide") is skipped
+			// rather than turned into a bogus bucket name.
 			noBuckets: [][]string{
-				// A range whose identifier isn't a real distro version (here
-				// the "fcrawhide" event on CVE-2023-27536 under major 9) is
-				// skipped, not turned into a "rapidfort fedora rawhide" bucket.
 				{"advisory-detail", "CVE-2023-27536", "rapidfort fedora rawhide"},
 			},
 		},
 		{
-			// The Ubuntu feed can bundle rf-tagged and ubuntu-tagged ranges in
-			// the same CVE. split must route rf ranges to the dpkg-only
-			// "rapidfort ubuntu" bucket (empty version) and ubuntu ranges to
-			// "rapidfort ubuntu <ver>" so the scanner (which no longer
-			// post-filters by identifier) picks the right one via bucket
-			// routing alone. The rf bucket is distinct from the RPM-format
-			// "rapidfort Red Hat" bucket because the dpkg comparator must
-			// never see RPM-format ranges.
+			// An rf-tagged Ubuntu range and an ubuntu-tagged range for the
+			// same CVE must land in separate buckets so a plain-ubuntu
+			// package can't be dpkg-compared against the (RPM-format) rf
+			// range across the family boundary.
 			name: "ubuntu split - rf and ubuntu ranges land in separate buckets",
 			dir:  filepath.Join("testdata", "split_ubuntu"),
 			wantValues: []vulnsrctest.WantValues{
@@ -492,7 +469,6 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 				},
 				{
-					// ubuntu range keeps its ubuntu-flavored fix in the Ubuntu bucket.
 					Key: []string{
 						"advisory-detail",
 						"CVE-2025-69648",
@@ -506,10 +482,6 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 				},
 				{
-					// rf range lands in the dpkg-only "rapidfort ubuntu" bucket
-					// (empty version), so a plain-ubuntu package can't spuriously
-					// match it and RPM ranges from "rapidfort Red Hat" can't be
-					// dpkg-compared against it either.
 					Key: []string{
 						"advisory-detail",
 						"CVE-2025-69648",
@@ -540,20 +512,13 @@ func TestVulnSrc_Update(t *testing.T) {
 			},
 		},
 		{
-			// Malformed path: a JSON file at security-advisories/OS/curl.json
-			// (missing the {osName}/ level) is skipped by the len(parts) < 2
-			// guard in parse(). If every file in the tree is malformed, parse
-			// returns zero entries and put surfaces the empty result as an error.
+			// A misconfigured cache that produces zero entries must surface as
+			// an error, not ship an empty integration.
 			name:    "malformed path - json directly under OS/ triggers empty-parse error",
 			dir:     filepath.Join("testdata", "malformed_path"),
 			wantErr: "no RapidFort advisories to save",
 		},
 		{
-			// When every file is for an unsupported OS (e.g. only OS/debian/
-			// present), newBucket rejects each and parse returns zero entries.
-			// put treats that as an error rather than a silent no-op, so a
-			// misconfigured cache (or an unexpectedly all-unsupported feed)
-			// surfaces at build time instead of shipping an empty integration.
 			name:    "empty parse (all unsupported OSes) returns error",
 			dir:     filepath.Join("testdata", "unsupported_os"),
 			wantErr: "no RapidFort advisories to save",

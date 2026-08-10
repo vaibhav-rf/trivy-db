@@ -302,16 +302,15 @@ func buildAdvisory(cve CVEEntry) types.Advisory {
 		switch {
 		case ev.Fixed != "":
 			patched = append(patched, ev.Fixed)
-			if ev.Introduced != "" {
-				// Comma-separated: each part is parsed individually by newConstraint which handles spaces.
-				vulnerable = append(vulnerable, fmt.Sprintf(">= %s, < %s", ev.Introduced, ev.Fixed))
+			// A lower bound of zero ("0:0" once the feed spells out the epoch) means the same as no lower bound,
+			// so it is left out — as `osv` package does for the same case.
+			if introduced := ev.Introduced; introduced != "" && introduced != "0" && introduced != "0:0" {
+				vulnerable = append(vulnerable, fmt.Sprintf(">=%s, <%s", introduced, ev.Fixed))
 			} else {
-				// Single constraint: write without space so the existing space-based splitter
-				// doesn't break it into ["<", "version"].
 				vulnerable = append(vulnerable, fmt.Sprintf("<%s", ev.Fixed))
 			}
 		case ev.Introduced != "":
-			// Open vulnerability (no fix): write without space for the same reason.
+			// An open vulnerability keeps its lower bound even when it is zero: dropping it would leave nothing to write.
 			vulnerable = append(vulnerable, fmt.Sprintf(">=%s", ev.Introduced))
 		}
 	}

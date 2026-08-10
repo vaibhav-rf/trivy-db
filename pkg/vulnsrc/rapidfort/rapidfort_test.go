@@ -47,7 +47,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 					Value: types.Advisory{
 						PatchedVersions:    []string{"7.68.0-1ubuntu2.1"},
-						VulnerableVersions: []string{">= 7.68.0, < 7.68.0-1ubuntu2.1"},
+						VulnerableVersions: []string{">=7.68.0, <7.68.0-1ubuntu2.1"},
 						Severity:           types.SeverityHigh,
 					},
 				},
@@ -117,7 +117,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 					Value: types.Advisory{
 						PatchedVersions:    []string{"3.1.4-r1"},
-						VulnerableVersions: []string{">= 3.0.0, < 3.1.4-r1"},
+						VulnerableVersions: []string{">=3.0.0, <3.1.4-r1"},
 						Severity:           types.SeverityMedium,
 					},
 				},
@@ -196,7 +196,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 					Value: types.Advisory{
 						PatchedVersions:    []string{"7.76.1-26.el9_3.3"},
-						VulnerableVersions: []string{">= 7.76.1-14.el9, < 7.76.1-26.el9_3.3"},
+						VulnerableVersions: []string{">=7.76.1-14.el9, <7.76.1-26.el9_3.3"},
 						Severity:           types.SeverityMedium,
 					},
 				},
@@ -221,7 +221,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 					Value: types.Advisory{
 						PatchedVersions:    []string{"7.76.1-26.fc39"},
-						VulnerableVersions: []string{">= 7.76.1-14.fc39, < 7.76.1-26.fc39"},
+						VulnerableVersions: []string{">=7.76.1-14.fc39, <7.76.1-26.fc39"},
 						Severity:           types.SeverityMedium,
 					},
 				},
@@ -246,7 +246,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 					Value: types.Advisory{
 						PatchedVersions:    []string{"7.76.1-26.rf"},
-						VulnerableVersions: []string{">= 7.76.1-14.rf, < 7.76.1-26.rf"},
+						VulnerableVersions: []string{">=7.76.1-14.rf, <7.76.1-26.rf"},
 						Severity:           types.SeverityMedium,
 					},
 				},
@@ -329,7 +329,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 					Value: types.Advisory{
 						PatchedVersions:    []string{"7.68.0-1ubuntu2.1"},
-						VulnerableVersions: []string{">= 7.68.0, < 7.68.0-1ubuntu2.1"},
+						VulnerableVersions: []string{">=7.68.0, <7.68.0-1ubuntu2.1"},
 						Severity:           types.SeverityHigh,
 					},
 				},
@@ -366,7 +366,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 					Value: types.Advisory{
 						PatchedVersions:    []string{"7.81.0-1ubuntu1.14"},
-						VulnerableVersions: []string{">= 7.81.0, < 7.81.0-1ubuntu1.14"},
+						VulnerableVersions: []string{">=7.81.0, <7.81.0-1ubuntu1.14"},
 						Severity:           types.SeverityMedium,
 					},
 				},
@@ -418,7 +418,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 					Value: types.Advisory{
 						PatchedVersions:    []string{"7.76.1-26.el9_3.3"},
-						VulnerableVersions: []string{">= 7.76.1-14.el9, < 7.76.1-26.el9_3.3"},
+						VulnerableVersions: []string{">=7.76.1-14.el9, <7.76.1-26.el9_3.3"},
 						Severity:           types.SeverityMedium,
 					},
 				},
@@ -431,7 +431,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 					Value: types.Advisory{
 						PatchedVersions:    []string{"7.76.1-26.fc39"},
-						VulnerableVersions: []string{">= 7.76.1-14.fc39, < 7.76.1-26.fc39"},
+						VulnerableVersions: []string{">=7.76.1-14.fc39, <7.76.1-26.fc39"},
 						Severity:           types.SeverityMedium,
 					},
 				},
@@ -477,7 +477,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 					Value: types.Advisory{
 						PatchedVersions:    []string{"0:2.46-1ubuntu1"},
-						VulnerableVersions: []string{">= 0:2.42-4ubuntu2.10, < 0:2.46-1ubuntu1"},
+						VulnerableVersions: []string{">=0:2.42-4ubuntu2.10, <0:2.46-1ubuntu1"},
 						Severity:           types.SeverityMedium,
 					},
 				},
@@ -490,7 +490,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 					Value: types.Advisory{
 						PatchedVersions:    []string{"0:2.46-10rfubu"},
-						VulnerableVersions: []string{">= 0:0, < 0:2.46-10rfubu"},
+						VulnerableVersions: []string{"<0:2.46-10rfubu"},
 						Severity:           types.SeverityMedium,
 					},
 				},
@@ -574,7 +574,7 @@ func TestVulnSrc_Get(t *testing.T) {
 			want: []types.Advisory{
 				{
 					VulnerabilityID:    "CVE-2020-8169",
-					VulnerableVersions: []string{">= 7.68.0, < 7.68.0-1ubuntu2.1"},
+					VulnerableVersions: []string{">=7.68.0, <7.68.0-1ubuntu2.1"},
 					PatchedVersions:    []string{"7.68.0-1ubuntu2.1"},
 					Severity:           types.SeverityHigh,
 					DataSource: &types.DataSource{
@@ -598,7 +598,7 @@ func TestVulnSrc_Get(t *testing.T) {
 			want: []types.Advisory{
 				{
 					VulnerabilityID:    "CVE-2023-5678",
-					VulnerableVersions: []string{">= 3.0.0, < 3.1.4-r1"},
+					VulnerableVersions: []string{">=3.0.0, <3.1.4-r1"},
 					PatchedVersions:    []string{"3.1.4-r1"},
 					Severity:           types.SeverityMedium,
 					DataSource: &types.DataSource{
@@ -622,7 +622,7 @@ func TestVulnSrc_Get(t *testing.T) {
 			want: []types.Advisory{
 				{
 					VulnerabilityID:    "CVE-2023-27536",
-					VulnerableVersions: []string{">= 7.76.1-14.el9, < 7.76.1-26.el9_3.3"},
+					VulnerableVersions: []string{">=7.76.1-14.el9, <7.76.1-26.el9_3.3"},
 					PatchedVersions:    []string{"7.76.1-26.el9_3.3"},
 					Severity:           types.SeverityMedium,
 					DataSource: &types.DataSource{
@@ -657,7 +657,7 @@ func TestVulnSrc_Get(t *testing.T) {
 			want: []types.Advisory{
 				{
 					VulnerabilityID:    "CVE-2023-27536",
-					VulnerableVersions: []string{">= 7.76.1-14.fc39, < 7.76.1-26.fc39"},
+					VulnerableVersions: []string{">=7.76.1-14.fc39, <7.76.1-26.fc39"},
 					PatchedVersions:    []string{"7.76.1-26.fc39"},
 					Severity:           types.SeverityMedium,
 					DataSource: &types.DataSource{
@@ -681,7 +681,7 @@ func TestVulnSrc_Get(t *testing.T) {
 			want: []types.Advisory{
 				{
 					VulnerabilityID:    "CVE-2023-27536",
-					VulnerableVersions: []string{">= 7.76.1-14.rf, < 7.76.1-26.rf"},
+					VulnerableVersions: []string{">=7.76.1-14.rf, <7.76.1-26.rf"},
 					PatchedVersions:    []string{"7.76.1-26.rf"},
 					Severity:           types.SeverityMedium,
 					DataSource: &types.DataSource{

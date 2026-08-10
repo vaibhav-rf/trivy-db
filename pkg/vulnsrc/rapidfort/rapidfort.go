@@ -320,6 +320,9 @@ func buildAdvisory(cve CVEEntry) types.Advisory {
 	// source order is not guaranteed. The lists are independent (no per-range
 	// identifiers), so sorting each on its own is safe.
 	sort.Strings(patched)
+	// The feed lists one event per historical rebuild, all carrying the same fix, so the fixed version has to be collapsed — the scanner prints this list as is.
+	// The vulnerable ranges stay: those events differ in their lower bound, and each one describes a real interval.
+	patched = slices.Compact(patched)
 	sort.Strings(vulnerable)
 
 	return types.Advisory{

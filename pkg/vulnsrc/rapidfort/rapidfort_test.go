@@ -505,6 +505,56 @@ func TestVulnSrc_Update(t *testing.T) {
 			},
 		},
 		{
+			// The feed lists one event per historical rebuild, all with the same
+			// fix, so the fixed version must be stored once while every range is
+			// kept.
+			name: "repeated fix - PatchedVersions holds one entry per distinct fix",
+			dir:  filepath.Join("testdata", "repeated_fix"),
+			wantValues: []vulnsrctest.WantValues{
+				{
+					Key: []string{"data-source", "rapidfort ubuntu"},
+					Value: types.DataSource{
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "ubuntu",
+					},
+				},
+				{
+					Key: []string{
+						"advisory-detail",
+						"CVE-2026-9076",
+						"rapidfort ubuntu",
+						"rf-openssl",
+					},
+					Value: types.Advisory{
+						PatchedVersions: []string{"0:3.5.7-10rfubu+rf.0"},
+						VulnerableVersions: []string{
+							">=0:3.0.13-1rfubuntu3.1~rf.1, <0:3.5.7-10rfubu+rf.0",
+							">=0:3.0.14-0rfubu3.1+rf.2, <0:3.5.7-10rfubu+rf.0",
+							">=0:3.0.14-0rfubuntu3.1+rf.1, <0:3.5.7-10rfubu+rf.0",
+						},
+						Severity: types.SeverityLow,
+					},
+				},
+				{
+					Key: []string{
+						"vulnerability-detail",
+						"CVE-2026-9076",
+						"rapidfort",
+					},
+					Value: types.VulnerabilityDetail{
+						Title:       "Issue summary: When CMS password-based decryption (RFC 3211 / PWR ...",
+						Description: "Issue summary: When CMS password-based decryption (RFC 3211 / PWRI key unwrap)\nprocesses attacker-supplied CMS data, an attacker-chosen stream-mode KEK\ncipher can trigger a heap out-of-bounds read.",
+					},
+				},
+				{
+					Key:   []string{"vulnerability-id", "CVE-2026-9076"},
+					Value: map[string]any{},
+				},
+			},
+		},
+		{
 			// A misconfigured cache that produces zero entries must surface as
 			// an error, not ship an empty integration.
 			name:    "malformed path - json directly under OS/ triggers empty-parse error",

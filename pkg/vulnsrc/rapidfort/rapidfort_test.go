@@ -64,9 +64,6 @@ func TestVulnSrc_Update(t *testing.T) {
 						Severity:           types.SeverityMedium,
 					},
 				},
-				// Severity lives in Advisory, not VulnerabilityDetail, so
-				// FillInfo can't override RapidFort's curated value with the
-				// base-OS VendorSeverity.
 				{
 					Key: []string{
 						"vulnerability-detail",
@@ -142,7 +139,6 @@ func TestVulnSrc_Update(t *testing.T) {
 				{
 					// Event with a fixed version but no introduced bound:
 					// the vulnerable range is written as a bare "<fixed"
-					// (no space, so the space-based splitter keeps it intact).
 					Key: []string{
 						"advisory-detail",
 						"CVE-2024-0001",
@@ -443,10 +439,7 @@ func TestVulnSrc_Update(t *testing.T) {
 			},
 		},
 		{
-			// An rf-tagged Ubuntu range and an ubuntu-tagged range for the
-			// same CVE must land in separate buckets so a plain-ubuntu
-			// package can't be dpkg-compared against the (RPM-format) rf
-			// range across the family boundary.
+			// Separate buckets keep a plain-ubuntu package from matching the rebuild range.
 			name: "ubuntu split - rf and ubuntu ranges land in separate buckets",
 			dir:  filepath.Join("testdata", "split_ubuntu"),
 			wantValues: []vulnsrctest.WantValues{

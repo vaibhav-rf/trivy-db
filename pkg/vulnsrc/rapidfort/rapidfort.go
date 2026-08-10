@@ -46,7 +46,6 @@ type config struct {
 	logger *log.Logger
 }
 
-// VulnSrc implements the vulnsrc.VulnSrc interface and is used to build the DB.
 type VulnSrc struct {
 	config
 }
@@ -64,11 +63,8 @@ func (vs VulnSrc) Name() types.SourceID {
 	return source.ID
 }
 
-// Update reads all per-package JSON files from
-// {dir}/security-advisories/OS/{os}/{pkg}.json (the raw upstream RapidFort
-// advisory repo, fetched into the build cache by the Makefile) and writes
-// them into the BoltDB. Splitting each source file by distro version happens
-// in-memory inside parse(), not on disk.
+// Update reads all per-package JSON files from {dir}/rapidfort-security-advisories/OS/{os}/
+// and writes them into the BoltDB.
 func (vs VulnSrc) Update(dir string) error {
 	rootDir := filepath.Join(dir, rapidfortDir, osSubDir)
 	eb := oops.In("rapidfort").With("root_dir", rootDir)
@@ -200,7 +196,7 @@ func (vs VulnSrc) split(eco ecosystem.Type, src SourcePackageAdvisory, path stri
 	return out
 }
 
-// resolveBucket works out which bucket one range belongs to, failing for ranges Trivy can't dispatch.
+// resolveBucket works out which bucket one range belongs to, failing for ranges trivy-db can't dispatch.
 // eco and ecoVer are the OS of the feed and the version key the range is listed under; the identifier can override both.
 func resolveBucket(eco ecosystem.Type, ecoVer, identifier string) (bucket.DataSourceBucket, error) {
 	eb := oops.With("identifier", identifier)
@@ -256,10 +252,9 @@ func isVersionNumber(s string) bool {
 
 func (vs VulnSrc) put(entries []entry) error {
 	// Fail loudly on an empty parse — a silent no-op here would ship an empty
-	// RapidFort integration if the cache is misconfigured or the feed breaks,
-	// and nobody scans per-source build logs to catch it.
+	// RapidFort integration if the cache is misconfigured or the feed breaks.
 	if len(entries) == 0 {
-		return oops.Errorf("no RapidFort advisories to save — check that the security-advisories cache is populated")
+		return oops.Errorf("no RapidFort advisories to save — check that the rapidfort-security-advisories cache is populated")
 	}
 	vs.logger.Info("Saving RapidFort advisories", "count", len(entries))
 
@@ -330,13 +325,12 @@ func buildAdvisory(cve CVEEntry) types.Advisory {
 	return types.Advisory{
 		PatchedVersions:    patched,
 		VulnerableVersions: vulnerable,
-		Severity:           sev,
+		// RapidFort rates each package on its own, so the severity belongs here rather than in the CVE-wide VulnerabilityDetail.
+		Severity: sev,
 	}
 }
 
-// buildVulnerabilityDetail carries only prose (title, description). Severity
-// stays in Advisory (per-package), not here, so FillInfo can't override
-// RapidFort's curated severity with the base-OS VendorSeverity.
+// buildVulnerabilityDetail carries only prose (title, description). Severity stays in Advisory (per-package).
 func buildVulnerabilityDetail(cve CVEEntry) types.VulnerabilityDetail {
 	return types.VulnerabilityDetail{
 		Title:       cve.Title,
@@ -362,6 +356,7 @@ func NewVulnSrcGetter(baseEcosystem ecosystem.Type) VulnSrcGetter {
 }
 
 // Get returns RapidFort advisories for a given package and OS version (e.g. "22.04").
+// RapidFort's own rebuilds are not tied to a release, so pass an empty version to read them.
 func (vs VulnSrcGetter) Get(params db.GetParams) ([]types.Advisory, error) {
 	eb := oops.In("rapidfort").With("base_ecosystem", vs.baseEcosystem).With("os_version", params.Release).With("package_name", params.PkgName)
 

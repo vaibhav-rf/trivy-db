@@ -209,6 +209,11 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 				},
 				{
+					// The redhat and oracle feeds both carry an fc39 range for
+					// this CVE, and both land in the shared fedora bucket. The
+					// ranges differ, so they are unioned rather than letting the
+					// last file walked overwrite the other. The identical fixed
+					// version is de-duplicated.
 					Key: []string{
 						"advisory-detail",
 						"CVE-2023-27536",
@@ -216,9 +221,12 @@ func TestVulnSrc_Update(t *testing.T) {
 						"curl",
 					},
 					Value: types.Advisory{
-						PatchedVersions:    []string{"7.76.1-26.fc39"},
-						VulnerableVersions: []string{">=7.76.1-14.fc39, <7.76.1-26.fc39"},
-						Severity:           types.SeverityMedium,
+						PatchedVersions: []string{"7.76.1-26.fc39"},
+						VulnerableVersions: []string{
+							"<7.76.1-26.fc39",
+							">=7.76.1-14.fc39, <7.76.1-26.fc39",
+						},
+						Severity: types.SeverityMedium,
 					},
 				},
 				{
@@ -298,6 +306,98 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 					Value: map[string]any{},
 				},
+				// The oracle feed splits the same way the redhat one does: elN
+				// to the versioned Oracle buckets, fcNN to the shared fedora
+				// buckets asserted above, and rf to an Oracle-scoped bucket.
+				{
+					Key: []string{
+						"data-source",
+						"rapidfort Oracle Linux 9",
+					},
+					Value: types.DataSource{
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "oracle-oval",
+					},
+				},
+				{
+					Key: []string{
+						"advisory-detail",
+						"CVE-2023-27536",
+						"rapidfort Oracle Linux 9",
+						"curl",
+					},
+					Value: types.Advisory{
+						PatchedVersions:    []string{"7.76.1-26.el9_3.3"},
+						VulnerableVersions: []string{">=7.76.1-14.el9, <7.76.1-26.el9_3.3"},
+						Severity:           types.SeverityMedium,
+					},
+				},
+				{
+					// The el5 range is filed under a malformed top-level key
+					// ("el5" where a bare "5" was meant). Splitting re-keys by
+					// the range identifier, so the release still comes out as 5.
+					Key: []string{
+						"data-source",
+						"rapidfort Oracle Linux 5",
+					},
+					Value: types.DataSource{
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "oracle-oval",
+					},
+				},
+				{
+					Key: []string{
+						"advisory-detail",
+						"CVE-2024-EL5KEY",
+						"rapidfort Oracle Linux 5",
+						"curl",
+					},
+					Value: types.Advisory{
+						PatchedVersions:    []string{"7.19.7-54.el5"},
+						VulnerableVersions: []string{"<7.19.7-54.el5"},
+						Severity:           types.SeverityHigh,
+					},
+				},
+				{
+					// RapidFort's own rebuilds from the oracle feed: the feed's
+					// ecosystem with the release dropped, kept apart from the
+					// "rapidfort Red Hat" rebuild bucket the redhat feed writes.
+					// The two hold different fixed versions for the same CVE and
+					// package, which is exactly why they must not share.
+					Key: []string{
+						"data-source",
+						"rapidfort Oracle Linux",
+					},
+					Value: types.DataSource{
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "oracle-oval",
+					},
+				},
+				{
+					Key: []string{
+						"advisory-detail",
+						"CVE-2023-27536",
+						"rapidfort Oracle Linux",
+						"curl",
+					},
+					Value: types.Advisory{
+						PatchedVersions:    []string{"7.76.1-27.rf"},
+						VulnerableVersions: []string{">=7.76.1-14.rf, <7.76.1-27.rf"},
+						Severity:           types.SeverityMedium,
+					},
+				},
+			},
+			noBuckets: [][]string{
+				// The malformed "el5" top-level key is never used as a release:
+				// the range identifier decides the bucket, so no bucket is keyed
+				// on the raw key.
+				{"advisory-detail", "CVE-2024-EL5KEY", "rapidfort Oracle Linux el5"},
 			},
 		},
 		{
@@ -737,6 +837,59 @@ func TestVulnSrc_Get(t *testing.T) {
 			},
 		},
 		{
+			name:    "oracle advisory found",
+			baseOS:  ecosystem.OracleLinux,
+			osVer:   "9",
+			pkgName: "curl",
+			fixtures: []string{
+				"testdata/fixtures/happy.yaml",
+				"testdata/fixtures/data-source.yaml",
+			},
+			want: []types.Advisory{
+				{
+					VulnerabilityID:    "CVE-2023-27536",
+					VulnerableVersions: []string{">=7.76.1-14.el9, <7.76.1-26.el9_3.3"},
+					PatchedVersions:    []string{"7.76.1-26.el9_3.3"},
+					Severity:           types.SeverityMedium,
+					DataSource: &types.DataSource{
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "oracle-oval",
+					},
+				},
+			},
+		},
+		{
+			// The oracle feed's rf rebuilds get their own bucket
+			// ("rapidfort Oracle Linux"), separate from the redhat feed's
+			// ("rapidfort Red Hat"), which the empty release selects. The
+			// fixture holds a different fixed version in each, so 7.76.1-27.rf
+			// shows which one the lookup landed in.
+			name:    "oracle rf advisory found",
+			baseOS:  ecosystem.OracleLinux,
+			osVer:   "",
+			pkgName: "curl",
+			fixtures: []string{
+				"testdata/fixtures/happy.yaml",
+				"testdata/fixtures/data-source.yaml",
+			},
+			want: []types.Advisory{
+				{
+					VulnerabilityID:    "CVE-2023-27536",
+					VulnerableVersions: []string{">=7.76.1-14.rf, <7.76.1-27.rf"},
+					PatchedVersions:    []string{"7.76.1-27.rf"},
+					Severity:           types.SeverityMedium,
+					DataSource: &types.DataSource{
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "oracle-oval",
+					},
+				},
+			},
+		},
+		{
 			name:    "no advisory for package",
 			baseOS:  ecosystem.Ubuntu,
 			osVer:   "22.04",
@@ -752,8 +905,8 @@ func TestVulnSrc_Get(t *testing.T) {
 			// for any other one has no bucket to read and must say so rather than
 			// report the package as clean.
 			name:    "sad path - base OS RapidFort doesn't dispatch to",
-			baseOS:  ecosystem.Debian,
-			osVer:   "12",
+			baseOS:  ecosystem.PhotonOS,
+			osVer:   "5.0",
 			pkgName: "curl",
 			fixtures: []string{
 				"testdata/fixtures/happy.yaml",

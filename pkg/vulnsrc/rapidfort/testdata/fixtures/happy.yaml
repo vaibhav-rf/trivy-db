@@ -58,3 +58,27 @@
             PatchedVersions:
               - "7.76.1-26.rf"
             Severity: 2
+- bucket: rapidfort Oracle Linux 9
+  pairs:
+    - bucket: curl
+      pairs:
+        - key: CVE-2023-27536
+          value:
+            VulnerableVersions:
+              - ">=7.76.1-14.el9, <7.76.1-26.el9_3.3"
+            PatchedVersions:
+              - "7.76.1-26.el9_3.3"
+            Severity: 2
+# Deliberately a different fixed version from the "rapidfort Red Hat" rebuild
+# bucket above, so a lookup proves which of the two it resolved to.
+- bucket: rapidfort Oracle Linux
+  pairs:
+    - bucket: curl
+      pairs:
+        - key: CVE-2023-27536
+          value:
+            VulnerableVersions:
+              - ">=7.76.1-14.rf, <7.76.1-27.rf"
+            PatchedVersions:
+              - "7.76.1-27.rf"
+            Severity: 2

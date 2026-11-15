@@ -122,6 +122,15 @@ type Advisory struct {
 	// e.g. https://security-tracker.debian.org/tracker/CVE-2015-2328
 	Severity Severity `json:",omitempty"`
 
+	// Title and Description carry per-advisory prose on the Advisory itself.
+	// The consolidated "vulnerability" bucket picks prose by AllSourceIDs
+	// precedence, so a source with curated wording further down that list would
+	// otherwise lose its title and description to any upstream source that also
+	// carries one — these fields let the scanner forward the source's own
+	// wording without that merger overriding it.
+	Title       string `json:",omitempty"`
+	Description string `json:",omitempty"`
+
 	// Versions for os package
 	FixedVersion    string `json:",omitempty"`
 	AffectedVersion string `json:",omitempty"` // Only for Arch Linux

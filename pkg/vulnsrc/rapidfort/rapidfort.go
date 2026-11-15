@@ -342,6 +342,12 @@ func buildAdvisory(cve CVEEntry) types.Advisory {
 		VulnerableVersions: vulnerable,
 		// RapidFort rates each package on its own, so the severity belongs here rather than in the CVE-wide VulnerabilityDetail.
 		Severity: sev,
+		// Carry the curated prose on the Advisory so it survives the
+		// vulnerability-detail bucket cleanup; the scanner forwards these
+		// straight to the report, skipping the AllSourceIDs merger that would
+		// otherwise prefer an upstream source's wording for the same CVE.
+		Title:       cve.Title,
+		Description: cve.Description,
 	}
 }
 
